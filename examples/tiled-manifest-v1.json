@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "overlap_policy": "mean",
+  "tiles": [
+    {
+      "path": "tiles/tumor-left.npy",
+      "format": "npy",
+      "sample_grid_origin": {"y": 0, "x": 0}
+    },
+    {
+      "path": "tiles/tumor-right.npy",
+      "format": "npy",
+      "sample_grid_origin": {"y": 0, "x": 256},
+      "valid_region": {"y": 0, "x": 0, "height": 256, "width": 256}
+    }
+  ]
+}

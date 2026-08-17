@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/wsi-annotation-interop/pathology-mapping-v1.schema.json",
+  "title": "Pathology GeoJSON label and SR mapping profile version 1",
+  "type": "object",
+  "required": ["schema_version", "labels"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "labels": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/sourceKey"},
+      "additionalProperties": {"$ref": "#/$defs/label"}
+    },
+    "measurements": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/sourceKey"},
+      "additionalProperties": {"$ref": "#/$defs/measurement"}
+    },
+    "qualitative_evaluations": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/sourceKey"},
+      "additionalProperties": {"$ref": "#/$defs/qualitative"}
+    },
+    "sr": {"$ref": "#/$defs/sr"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sourceKey": {"type": "string", "pattern": "^(?=.*\\S)[^\\u0000]+$"},
+    "code": {
+      "type": "object",
+      "required": ["code_meaning"],
+      "properties": {
+        "code_value": {"type": "string", "minLength": 1},
+        "long_code_value": {"type": "string", "minLength": 1},
+        "urn_code_value": {"type": "string", "minLength": 1},
+        "coding_scheme_designator": {"type": "string", "minLength": 1},
+        "coding_scheme_version": {"type": "string", "minLength": 1},
+        "code_meaning": {"type": "string", "minLength": 1},
+        "context_identifier": {"type": "string", "minLength": 1},
+        "context_uid": {"type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$"},
+        "mapping_resource": {"type": "string", "minLength": 1},
+        "mapping_resource_uid": {"type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$"},
+        "context_group_version": {"type": "string", "minLength": 1},
+        "context_group_local_version": {"type": "string", "minLength": 1},
+        "context_group_extension": {"type": "boolean"},
+        "context_group_extension_creator_uid": {"type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$"}
+      },
+      "oneOf": [
+        {
+          "required": ["code_value", "coding_scheme_designator"],
+          "not": {"anyOf": [{"required": ["long_code_value"]}, {"required": ["urn_code_value"]}]}
+        },
+        {
+          "required": ["long_code_value", "coding_scheme_designator"],
+          "not": {"anyOf": [{"required": ["code_value"]}, {"required": ["urn_code_value"]}]}
+        },
+        {
+          "required": ["urn_code_value"],
+          "not": {"anyOf": [{"required": ["code_value"]}, {"required": ["long_code_value"]}]}
+        }
+      ],
+      "allOf": [
+        {
+          "if": {"required": ["coding_scheme_version"]},
+          "then": {"required": ["coding_scheme_designator"]}
+        },
+        {
+          "if": {"required": ["context_identifier"]},
+          "then": {"required": ["mapping_resource", "context_group_version"]}
+        },
+        {
+          "if": {
+            "properties": {"context_group_extension": {"const": true}},
+            "required": ["context_group_extension"]
+          },
+          "then": {
+            "required": ["context_identifier", "context_group_local_version", "context_group_extension_creator_uid"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "algorithm": {
+      "type": "object",
+      "required": ["family", "name", "version"],
+      "properties": {
+        "family": {"$ref": "#/$defs/code"},
+        "name_code": {"$ref": "#/$defs/code"},
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "parameters": {"type": "string"},
+        "source": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "applicability": {
+      "type": "object",
+      "properties": {
+        "all_optical_paths": {"type": "boolean"},
+        "optical_paths": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "all_z_planes": {"type": "boolean"},
+        "z_coordinates_mm": {"type": "array", "items": {"type": "number"}}
+      },
+      "additionalProperties": false
+    },
+    "label": {
+      "type": "object",
+      "required": [
+        "category",
+        "property_type",
+        "generation_type",
+        "recommended_display_cielab",
+        "segment_label"
+      ],
+      "properties": {
+        "category": {"$ref": "#/$defs/code"},
+        "property_type": {"$ref": "#/$defs/code"},
+        "property_type_modifiers": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "anatomic_regions": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "primary_anatomic_structures": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/code"}
+        },
+        "generation_type": {"enum": ["MANUAL", "SEMIAUTOMATIC", "AUTOMATIC"]},
+        "algorithm": {"$ref": "#/$defs/algorithm"},
+        "applicability": {"$ref": "#/$defs/applicability"},
+        "recommended_display_cielab": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "integer", "minimum": 0, "maximum": 65535},
+            {"type": "integer", "minimum": 0, "maximum": 65535},
+            {"type": "integer", "minimum": 0, "maximum": 65535}
+          ],
+          "items": false
+        },
+        "segment_label": {"type": "string", "minLength": 1, "maxLength": 64}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"generation_type": {"const": "MANUAL"}}},
+          "then": {"not": {"required": ["algorithm"]}},
+          "else": {"required": ["algorithm"]}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "measurement": {
+      "type": "object",
+      "required": ["concept", "unit"],
+      "properties": {
+        "concept": {"$ref": "#/$defs/code"},
+        "unit": {"$ref": "#/$defs/code"}
+      },
+      "additionalProperties": false
+    },
+    "qualitative": {
+      "type": "object",
+      "required": ["concept", "values"],
+      "properties": {
+        "concept": {"$ref": "#/$defs/code"},
+        "values": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/sourceKey"},
+          "additionalProperties": {"$ref": "#/$defs/code"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "sr": {
+      "type": "object",
+      "required": ["report_title", "procedures_reported"],
+      "properties": {
+        "report_title": {"$ref": "#/$defs/code"},
+        "procedures_reported": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/code"}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

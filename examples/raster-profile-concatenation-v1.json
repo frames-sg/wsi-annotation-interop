@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "input_format": "npy",
+  "dtype": "float32",
+  "axes": ["y", "x"],
+  "grid_origin": {"x": 0.0, "y": 0.0},
+  "sample_spacing": {"x": 0.03, "y": 1.0},
+  "coordinate_space": "level0-pixels",
+  "channels": [
+    {
+      "name": "tumor_probability",
+      "quantity": {
+        "code_value": "TUMOR",
+        "coding_scheme_designator": "99WSI",
+        "code_meaning": "Tumor probability"
+      },
+      "unit": {
+        "code_value": "1",
+        "coding_scheme_designator": "UCUM",
+        "code_meaning": "no units"
+      }
+    }
+  ],
+  "algorithm": {
+    "family": {
+      "code_value": "123110",
+      "coding_scheme_designator": "DCM",
+      "code_meaning": "Artificial Intelligence"
+    },
+    "name": "Example pathology model",
+    "version": "1.0"
+  }
+}

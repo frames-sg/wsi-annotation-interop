@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/wsi-annotation-interop/probe-report-v1.schema.json",
+  "title": "annotation_probe report version 1",
+  "type": "object",
+  "required": ["schema_version", "status", "operation", "implementation"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["ok", "error"]},
+    "operation": {"enum": ["inspect", "roundtrip"]},
+    "implementation": {"$ref": "#/$defs/implementation"},
+    "input": {"$ref": "#/$defs/file"},
+    "output": {"$ref": "#/$defs/file"},
+    "payload": {"enum": ["full", "digest"]},
+    "semantic": {"$ref": "#/$defs/semantic"},
+    "diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagnostic"}
+    },
+    "runtime": {"$ref": "#/$defs/runtime"},
+    "error": {"$ref": "#/$defs/error"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ok"}}},
+      "then": {
+        "required": ["input", "payload", "semantic", "diagnostics", "runtime"],
+        "not": {"required": ["error"]}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "error"}}},
+      "then": {
+        "required": ["error"],
+        "not": {"anyOf": [{"required": ["semantic"]}, {"required": ["runtime"]}]}
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "inspect"}}},
+      "then": {"not": {"required": ["output"]}}
+    },
+    {
+      "if": {
+        "properties": {"status": {"const": "ok"}, "operation": {"const": "roundtrip"}},
+        "required": ["status", "operation"]
+      },
+      "then": {"required": ["output"]}
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "implementation": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "file": {
+      "type": "object",
+      "required": ["path", "bytes", "sop_instance_uid", "series_instance_uid"],
+      "properties": {
+        "path": {"type": "string"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sop_instance_uid": {"type": "string", "minLength": 1},
+        "series_instance_uid": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "parse_ms",
+        "write_ms",
+        "verify_ms",
+        "canonicalize_ms",
+        "peak_tracked_heap_bytes"
+      ],
+      "properties": {
+        "parse_ms": {"type": "number", "minimum": 0},
+        "write_ms": {"type": "number", "minimum": 0},
+        "verify_ms": {"type": "number", "minimum": 0},
+        "canonicalize_ms": {"type": "number", "minimum": 0},
+        "peak_tracked_heap_bytes": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "path", "disposition", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "path": {"type": "string", "minLength": 1},
+        "disposition": {"enum": ["normalized", "would_drop", "unsupported"]},
+        "message": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "nullableString": {"type": ["string", "null"]},
+    "code": {
+      "type": "object",
+      "required": [
+        "value",
+        "value_kind",
+        "scheme",
+        "coding_scheme_version",
+        "meaning",
+        "context_identifier",
+        "context_uid",
+        "mapping_resource",
+        "mapping_resource_uid",
+        "context_group_version",
+        "context_group_local_version",
+        "context_group_extension",
+        "context_group_extension_creator_uid"
+      ],
+      "properties": {
+        "value": {"type": "string", "minLength": 1},
+        "value_kind": {"enum": ["short", "long", "urn"]},
+        "scheme": {"type": "string", "minLength": 1},
+        "coding_scheme_version": {"$ref": "#/$defs/nullableString"},
+        "meaning": {"type": "string", "minLength": 1},
+        "context_identifier": {"$ref": "#/$defs/nullableString"},
+        "context_uid": {"$ref": "#/$defs/nullableString"},
+        "mapping_resource": {"$ref": "#/$defs/nullableString"},
+        "mapping_resource_uid": {"$ref": "#/$defs/nullableString"},
+        "context_group_version": {"$ref": "#/$defs/nullableString"},
+        "context_group_local_version": {"$ref": "#/$defs/nullableString"},
+        "context_group_extension": {"type": ["boolean", "null"]},
+        "context_group_extension_creator_uid": {"$ref": "#/$defs/nullableString"}
+      },
+      "additionalProperties": false
+    },
+    "algorithm": {
+      "type": "object",
+      "required": ["family", "name_code", "name", "version", "parameters", "source"],
+      "properties": {
+        "family": {"$ref": "#/$defs/code"},
+        "name_code": {"oneOf": [{"$ref": "#/$defs/code"}, {"type": "null"}]},
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "parameters": {"$ref": "#/$defs/nullableString"},
+        "source": {"$ref": "#/$defs/nullableString"}
+      },
+      "additionalProperties": false
+    },
+    "content": {
+      "type": "object",
+      "required": ["label", "description", "creator_name"],
+      "properties": {
+        "label": {"type": "string"},
+        "description": {"type": "string"},
+        "creator_name": {"$ref": "#/$defs/nullableString"}
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "sop_class_uid",
+        "sop_instance_uid",
+        "series_instance_uid",
+        "study_instance_uid",
+        "frame_of_reference_uid",
+        "total_pixel_matrix_columns",
+        "total_pixel_matrix_rows",
+        "tile_columns",
+        "tile_rows",
+        "pixel_spacing",
+        "canonical_total_pixel_matrix_columns",
+        "canonical_total_pixel_matrix_rows",
+        "canonical_pixel_spacing"
+      ],
+      "properties": {
+        "sop_class_uid": {"type": "string", "minLength": 1},
+        "sop_instance_uid": {"type": "string", "minLength": 1},
+        "series_instance_uid": {"type": "string", "minLength": 1},
+        "study_instance_uid": {"type": "string", "minLength": 1},
+        "frame_of_reference_uid": {"$ref": "#/$defs/nullableString"},
+        "total_pixel_matrix_columns": {"type": "integer", "minimum": 1},
+        "total_pixel_matrix_rows": {"type": "integer", "minimum": 1},
+        "tile_columns": {"type": "integer", "minimum": 1},
+        "tile_rows": {"type": "integer", "minimum": 1},
+        "pixel_spacing": {"$ref": "#/$defs/nullableSpacing"},
+        "canonical_total_pixel_matrix_columns": {"type": "integer", "minimum": 1},
+        "canonical_total_pixel_matrix_rows": {"type": "integer", "minimum": 1},
+        "canonical_pixel_spacing": {"$ref": "#/$defs/nullableSpacing"}
+      },
+      "additionalProperties": false
+    },
+    "nullableSpacing": {
+      "oneOf": [
+        {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "items": false},
+        {"type": "null"}
+      ]
+    },
+    "measurement": {
+      "type": "object",
+      "required": ["concept", "units", "values", "annotation_indices"],
+      "properties": {
+        "concept": {"$ref": "#/$defs/code"},
+        "units": {"$ref": "#/$defs/code"},
+        "values": {"type": "array", "items": {"type": "number"}},
+        "annotation_indices": {
+          "oneOf": [
+            {"type": "array", "items": {"type": "integer", "minimum": 1}},
+            {"type": "null"}
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "geometry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "native_dimensions",
+            "canonical_dimensions",
+            "native_coordinates",
+            "canonical_level0_coordinates",
+            "primitive_point_indices"
+          ],
+          "properties": {
+            "mode": {"const": "Full"},
+            "native_dimensions": {"type": "integer", "enum": [2, 3]},
+            "canonical_dimensions": {"type": "integer", "enum": [2, 3]},
+            "native_coordinates": {"type": "array", "items": {"type": "number"}},
+            "canonical_level0_coordinates": {"type": "array", "items": {"type": "number"}},
+            "primitive_point_indices": {
+              "type": "array",
+              "items": {"type": "integer", "minimum": 1}
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "native_dimensions",
+            "canonical_dimensions",
+            "native_coordinate_count",
+            "canonical_coordinate_count",
+            "native_sha256",
+            "canonical_level0_sha256",
+            "primitive_point_indices"
+          ],
+          "properties": {
+            "mode": {"const": "Digest"},
+            "native_dimensions": {"type": "integer", "enum": [2, 3]},
+            "canonical_dimensions": {"type": "integer", "enum": [2, 3]},
+            "native_coordinate_count": {"type": "integer", "minimum": 0},
+            "canonical_coordinate_count": {"type": "integer", "minimum": 0},
+            "native_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "canonical_level0_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "primitive_point_indices": {
+              "type": "array",
+              "items": {"type": "integer", "minimum": 1}
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "annotationGroup": {
+      "type": "object",
+      "required": [
+        "uid",
+        "label",
+        "description",
+        "generation_type",
+        "algorithms",
+        "category",
+        "property_type",
+        "property_type_modifiers",
+        "anatomic_regions",
+        "primary_anatomic_structures",
+        "applies_to_all_optical_paths",
+        "referenced_optical_paths",
+        "applies_to_all_z_planes",
+        "common_z_coordinates_mm",
+        "recommended_display_cielab",
+        "graphic_type",
+        "annotation_count",
+        "measurements",
+        "geometry"
+      ],
+      "properties": {
+        "uid": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "description": {"type": "string"},
+        "generation_type": {"enum": ["MANUAL", "SEMIAUTOMATIC", "AUTOMATIC"]},
+        "algorithms": {"type": "array", "items": {"$ref": "#/$defs/algorithm"}},
+        "category": {"$ref": "#/$defs/code"},
+        "property_type": {"$ref": "#/$defs/code"},
+        "property_type_modifiers": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "anatomic_regions": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "primary_anatomic_structures": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "applies_to_all_optical_paths": {"type": "boolean"},
+        "referenced_optical_paths": {"type": "array", "items": {"type": "string"}},
+        "applies_to_all_z_planes": {"type": "boolean"},
+        "common_z_coordinates_mm": {"type": "array", "items": {"type": "number"}},
+        "recommended_display_cielab": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "integer", "minimum": 0, "maximum": 65535},
+            {"type": "integer", "minimum": 0, "maximum": 65535},
+            {"type": "integer", "minimum": 0, "maximum": 65535}
+          ],
+          "items": false
+        },
+        "graphic_type": {"enum": ["POINT", "POLYLINE", "POLYGON", "ELLIPSE", "RECTANGLE"]},
+        "annotation_count": {"type": "integer", "minimum": 0},
+        "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
+        "geometry": {"$ref": "#/$defs/geometry"}
+      },
+      "additionalProperties": false
+    },
+    "annData": {
+      "type": "object",
+      "required": [
+        "sop_instance_uid",
+        "series_instance_uid",
+        "coordinate_type",
+        "pixel_origin_interpretation",
+        "referenced_frame_number",
+        "content",
+        "source",
+        "groups"
+      ],
+      "properties": {
+        "sop_instance_uid": {"type": "string", "minLength": 1},
+        "series_instance_uid": {"type": "string", "minLength": 1},
+        "coordinate_type": {"enum": ["2D", "3D"]},
+        "pixel_origin_interpretation": {"type": ["string", "null"]},
+        "referenced_frame_number": {"type": ["integer", "null"], "minimum": 1},
+        "content": {"$ref": "#/$defs/content"},
+        "source": {"$ref": "#/$defs/source"},
+        "groups": {"type": "array", "items": {"$ref": "#/$defs/annotationGroup"}}
+      },
+      "additionalProperties": false
+    },
+    "segment": {
+      "type": "object",
+      "required": [
+        "number",
+        "label",
+        "description",
+        "generation_type",
+        "algorithms",
+        "category",
+        "property_type",
+        "property_type_modifiers",
+        "tracking_id",
+        "tracking_uid",
+        "anatomic_regions",
+        "primary_anatomic_structures",
+        "recommended_display_cielab"
+      ],
+      "properties": {
+        "number": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "label": {"type": "string"},
+        "description": {"type": "string"},
+        "generation_type": {"enum": ["MANUAL", "SEMIAUTOMATIC", "AUTOMATIC"]},
+        "algorithms": {"type": "array", "items": {"$ref": "#/$defs/algorithm"}},
+        "category": {"$ref": "#/$defs/code"},
+        "property_type": {"$ref": "#/$defs/code"},
+        "property_type_modifiers": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "tracking_id": {"$ref": "#/$defs/nullableString"},
+        "tracking_uid": {"$ref": "#/$defs/nullableString"},
+        "anatomic_regions": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "primary_anatomic_structures": {"type": "array", "items": {"$ref": "#/$defs/code"}},
+        "recommended_display_cielab": {
+          "type": "array",
+          "prefixItems": [{"type": "integer"}, {"type": "integer"}, {"type": "integer"}],
+          "items": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "binaryRun": {
+      "type": "object",
+      "required": ["segment_number", "row", "column_start", "length"],
+      "properties": {
+        "segment_number": {"type": "integer", "minimum": 1},
+        "row": {"type": "integer", "minimum": 0},
+        "column_start": {"type": "integer", "minimum": 0},
+        "length": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "fractionalRun": {
+      "type": "object",
+      "required": ["segment_number", "row", "column_start", "maximum_fractional_value", "values"],
+      "properties": {
+        "segment_number": {"type": "integer", "minimum": 1},
+        "row": {"type": "integer", "minimum": 0},
+        "column_start": {"type": "integer", "minimum": 0},
+        "maximum_fractional_value": {"type": "integer", "minimum": 1},
+        "values": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}}
+      },
+      "additionalProperties": false
+    },
+    "segMasks": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode", "sha256", "runs"],
+          "properties": {
+            "mode": {"const": "FullBinary"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "runs": {"type": "array", "items": {"$ref": "#/$defs/binaryRun"}}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["mode", "sha256", "runs"],
+          "properties": {
+            "mode": {"const": "FullFractional"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "runs": {"type": "array", "items": {"$ref": "#/$defs/fractionalRun"}}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["mode", "sha256", "run_count"],
+          "properties": {
+            "mode": {"const": "Digest"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "run_count": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "segData": {
+      "type": "object",
+      "required": [
+        "sop_instance_uid",
+        "series_instance_uid",
+        "segmentation_kind",
+        "content",
+        "source",
+        "segments",
+        "masks"
+      ],
+      "properties": {
+        "sop_instance_uid": {"type": "string", "minLength": 1},
+        "series_instance_uid": {"type": "string", "minLength": 1},
+        "segmentation_kind": {"enum": ["binary", "labelmap", "fractional"]},
+        "content": {"$ref": "#/$defs/content"},
+        "source": {"$ref": "#/$defs/source"},
+        "segments": {"type": "array", "items": {"$ref": "#/$defs/segment"}},
+        "masks": {"$ref": "#/$defs/segMasks"}
+      },
+      "additionalProperties": false
+    },
+    "semantic": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["object_type", "data"],
+          "properties": {
+            "object_type": {"const": "Ann"},
+            "data": {"$ref": "#/$defs/annData"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["object_type", "data"],
+          "properties": {
+            "object_type": {"const": "Seg"},
+            "data": {"$ref": "#/$defs/segData"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

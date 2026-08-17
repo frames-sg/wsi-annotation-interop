@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/wsi-annotation-interop/conversion-report-v1.schema.json",
+  "title": "annotation_probe conversion report version 1",
+  "type": "object",
+  "required": ["schema", "schema_version", "status", "operation", "implementation"],
+  "properties": {
+    "schema": {"const": "conversion-report-v1"},
+    "schema_version": {"const": 1},
+    "status": {"enum": ["ok", "error"]},
+    "operation": {"enum": ["convert-geojson", "convert-raster"]},
+    "implementation": {"$ref": "#/$defs/implementation"},
+    "inputs": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/input"}},
+    "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/output"}},
+    "target_coverage": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/coverage"}
+    },
+    "normalizations": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "losses": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "semantic_digest": {"$ref": "#/$defs/sha256"},
+    "timing_ms": {
+      "type": "object",
+      "required": ["conversion", "through_verification"],
+      "properties": {
+        "conversion": {"type": "number", "minimum": 0},
+        "through_verification": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "peak_tracked_heap_bytes": {"type": "integer", "minimum": 0},
+    "error": {"$ref": "#/$defs/error"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ok"}}, "required": ["status"]},
+      "then": {
+        "required": [
+          "inputs",
+          "outputs",
+          "target_coverage",
+          "normalizations",
+          "losses",
+          "semantic_digest",
+          "timing_ms",
+          "peak_tracked_heap_bytes"
+        ],
+        "not": {"required": ["error"]}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "error"}}, "required": ["status"]},
+      "then": {
+        "required": ["error"],
+        "not": {
+          "anyOf": [
+            {"required": ["inputs"]},
+            {"required": ["outputs"]},
+            {"required": ["target_coverage"]},
+            {"required": ["normalizations"]},
+            {"required": ["losses"]},
+            {"required": ["semantic_digest"]},
+            {"required": ["timing_ms"]},
+            {"required": ["peak_tracked_heap_bytes"]}
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "implementation": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uid": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[0-9]+(?:\\.[0-9]+)+$"
+    },
+    "input": {
+      "type": "object",
+      "required": ["role", "path", "bytes", "sha256"],
+      "properties": {
+        "role": {
+          "enum": [
+            "source",
+            "canonical_source",
+            "mapping",
+            "geojson",
+            "raster_profile",
+            "raster"
+          ]
+        },
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": [
+        "target",
+        "path",
+        "sop_class_uid",
+        "sop_instance_uid",
+        "series_instance_uid",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "target": {"enum": ["ann", "seg", "sr", "pm"]},
+        "path": {"type": "string", "minLength": 1},
+        "sop_class_uid": {"$ref": "#/$defs/uid"},
+        "sop_instance_uid": {"$ref": "#/$defs/uid"},
+        "series_instance_uid": {"$ref": "#/$defs/uid"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "concatenation_uid": {"$ref": "#/$defs/uid"},
+        "concatenation_source_sop_instance_uid": {"$ref": "#/$defs/uid"},
+        "in_concatenation_number": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "in_concatenation_total_number": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 65535
+        },
+        "frame_offset": {"type": "integer", "minimum": 0},
+        "frame_count": {"type": "integer", "minimum": 1},
+        "pixel_value_bytes": {"type": "integer", "minimum": 1},
+        "pixel_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"target": {"const": "pm"}}, "required": ["target"]},
+          "then": {
+            "required": ["frame_offset", "frame_count", "pixel_value_bytes", "pixel_sha256"]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {"required": ["concatenation_uid"]},
+                {"required": ["concatenation_source_sop_instance_uid"]},
+                {"required": ["in_concatenation_number"]},
+                {"required": ["in_concatenation_total_number"]},
+                {"required": ["frame_offset"]},
+                {"required": ["frame_count"]},
+                {"required": ["pixel_value_bytes"]},
+                {"required": ["pixel_sha256"]}
+              ]
+            }
+          }
+        },
+        {
+          "oneOf": [
+            {
+              "required": [
+                "concatenation_uid",
+                "concatenation_source_sop_instance_uid",
+                "in_concatenation_number",
+                "in_concatenation_total_number"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {"required": ["concatenation_uid"]},
+                  {"required": ["concatenation_source_sop_instance_uid"]},
+                  {"required": ["in_concatenation_number"]},
+                  {"required": ["in_concatenation_total_number"]}
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["target", "feature_count"],
+          "properties": {
+            "target": {"enum": ["ann", "seg", "sr"]},
+            "feature_count": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["target", "frame_count", "channel_count"],
+          "properties": {
+            "target": {"const": "pm"},
+            "frame_count": {"type": "integer", "minimum": 1},
+            "channel_count": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "path", "disposition", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "path": {"type": "string"},
+        "disposition": {"enum": ["normalized", "would_drop", "unsupported"]},
+        "message": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

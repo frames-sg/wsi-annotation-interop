@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "operation": "inspect",
+  "implementation": {"name": "dicom-viewer", "version": "0.1.0"},
+  "input": {
+    "path": "/tmp/ann.dcm",
+    "bytes": 1024,
+    "sop_instance_uid": "2.25.10",
+    "series_instance_uid": "2.25.11"
+  },
+  "payload": "digest",
+  "semantic": {
+    "object_type": "Ann",
+    "data": {
+      "sop_instance_uid": "2.25.10",
+      "series_instance_uid": "2.25.11",
+      "coordinate_type": "2D",
+      "pixel_origin_interpretation": "VOLUME",
+      "referenced_frame_number": null,
+      "content": {"label": "TEST", "description": "", "creator_name": null},
+      "source": {
+        "sop_class_uid": "1.2.840.10008.5.1.4.1.1.77.1.6",
+        "sop_instance_uid": "2.25.1",
+        "series_instance_uid": "2.25.2",
+        "study_instance_uid": "2.25.3",
+        "frame_of_reference_uid": "2.25.4",
+        "total_pixel_matrix_columns": 10,
+        "total_pixel_matrix_rows": 10,
+        "tile_columns": 5,
+        "tile_rows": 5,
+        "pixel_spacing": [0.001, 0.001],
+        "canonical_total_pixel_matrix_columns": 10,
+        "canonical_total_pixel_matrix_rows": 10,
+        "canonical_pixel_spacing": [0.001, 0.001]
+      },
+      "groups": []
+    }
+  },
+  "diagnostics": [],
+  "runtime": {
+    "parse_ms": 1.0,
+    "write_ms": 0.0,
+    "verify_ms": 0.0,
+    "canonicalize_ms": 0.1,
+    "peak_tracked_heap_bytes": 4096
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "2.25.7102",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [[1, 1], [13, 1], [13, 11], [1, 11], [1, 1]],
+          [[4, 4], [4, 8], [8, 8], [8, 4], [4, 4]]
+        ]
+      },
+      "properties": {
+        "objectType": "annotation",
+        "classification": {"name": "viable_tumor"},
+        "measurements": {"Area": 104.0},
+        "metadata": {"grade": "high"}
+      }
+    }
+  ]
+}

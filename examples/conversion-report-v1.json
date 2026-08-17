@@ -1,0 +1,50 @@
+{
+  "schema": "conversion-report-v1",
+  "schema_version": 1,
+  "status": "ok",
+  "operation": "convert-geojson",
+  "implementation": {"name": "dicom-viewer-rust", "version": "0.1.0"},
+  "inputs": [
+    {
+      "role": "source",
+      "path": "/research/source-wsi.dcm",
+      "bytes": 4096,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "role": "canonical_source",
+      "path": "/research/source-wsi.dcm",
+      "bytes": 4096,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "role": "mapping",
+      "path": "/research/pathology-mapping-v1.json",
+      "bytes": 1024,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "role": "geojson",
+      "path": "/research/annotations.geojson",
+      "bytes": 512,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "outputs": [
+    {
+      "target": "ann",
+      "path": "/research/output/ann.dcm",
+      "sop_class_uid": "1.2.840.10008.5.1.4.1.1.91.1",
+      "sop_instance_uid": "2.25.100",
+      "series_instance_uid": "2.25.101",
+      "bytes": 2048,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "target_coverage": [{"target": "ann", "feature_count": 1}],
+  "normalizations": [],
+  "losses": [],
+  "semantic_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+  "timing_ms": {"conversion": 1.25, "through_verification": 2.5},
+  "peak_tracked_heap_bytes": 8192
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "labels": {
+    "viable_tumor": {
+      "category": {
+        "code_value": "M-01000",
+        "coding_scheme_designator": "SRT",
+        "code_meaning": "Morphologically Altered Structure"
+      },
+      "property_type": {
+        "code_value": "108369006",
+        "coding_scheme_designator": "SCT",
+        "code_meaning": "Neoplasm"
+      },
+      "generation_type": "AUTOMATIC",
+      "algorithm": {
+        "family": {
+          "code_value": "123110",
+          "coding_scheme_designator": "DCM",
+          "code_meaning": "Artificial Intelligence"
+        },
+        "name": "Example pathology model",
+        "version": "1.0"
+      },
+      "recommended_display_cielab": [40000, 30000, 20000],
+      "segment_label": "Viable tumor"
+    }
+  },
+  "measurements": {
+    "Area": {
+      "concept": {
+        "code_value": "42798000",
+        "coding_scheme_designator": "SCT",
+        "code_meaning": "Area"
+      },
+      "unit": {
+        "code_value": "mm2",
+        "coding_scheme_designator": "UCUM",
+        "code_meaning": "square millimeter"
+      }
+    }
+  },
+  "qualitative_evaluations": {
+    "grade": {
+      "concept": {
+        "code_value": "258244004",
+        "coding_scheme_designator": "SCT",
+        "code_meaning": "Tumor grade"
+      },
+      "values": {
+        "high": {
+          "code_value": "75540009",
+          "coding_scheme_designator": "SCT",
+          "code_meaning": "High grade"
+        }
+      }
+    }
+  },
+  "sr": {
+    "report_title": {
+      "code_value": "126000",
+      "coding_scheme_designator": "DCM",
+      "code_meaning": "Imaging Measurement Report"
+    },
+    "procedures_reported": [
+      {
+        "code_value": "P5-09051",
+        "coding_scheme_designator": "SRT",
+        "code_meaning": "Histopathology procedure"
+      }
+    ]
+  }
+}

@@ -1,0 +1,411 @@
+{
+  "artifacts": [
+    {
+      "bytes": 2446,
+      "path": "conversions/geojson-direct/ann.dcm",
+      "sha256": "369a6addd4e3799826ce5a1f2a6cdab655949b88157b6f5ac75a8fc8063eacf9"
+    },
+    {
+      "bytes": 5650,
+      "path": "conversions/geojson-direct/sr.dcm",
+      "sha256": "4d7bb2d5bc394031111a42d2a3144ac54d8b0165d08faa02d449dfb99b38f3af"
+    },
+    {
+      "bytes": 5686,
+      "path": "conversions/geojson-seg-reference/seg.dcm",
+      "sha256": "2ffa8033b142a6d5aff406c010e6c59ebf8475e2ffbe4a36fd7c4cd626a509d1"
+    },
+    {
+      "bytes": 6160,
+      "path": "conversions/geojson-seg-reference/sr.dcm",
+      "sha256": "622d8c3d2e477b64c025751ac2ec7e2835dd7311bcf6b5c517eb51fe5a3a515f"
+    },
+    {
+      "bytes": 436,
+      "path": "conversions/inputs/pathology-annotations.geojson",
+      "sha256": "9c9197886f25ec97725f6f79f51487a3e100e9fd0badd437580c0960aceb40fc"
+    },
+    {
+      "bytes": 1822,
+      "path": "conversions/inputs/pathology-mapping-v1.json",
+      "sha256": "da61ba0837af95205eae8f1f2dcfee9df1ad2d16038aa707bd12e222be5217e4"
+    },
+    {
+      "bytes": 512,
+      "path": "conversions/inputs/pathology-seg-holes.geojson",
+      "sha256": "012a267bb6956584d65f28721629357b08db24f89dd224da15c454c1b7ec6209"
+    },
+    {
+      "bytes": 1152,
+      "path": "conversions/inputs/probability-float32.npy",
+      "sha256": "a112aa39e8ed06ec6e963f06d86867e273610d09e45bf598a8930d5fb7dc8163"
+    },
+    {
+      "bytes": 2180,
+      "path": "conversions/inputs/probability-wide-float32.npy",
+      "sha256": "c458fd5a70377d12f877ef8bd50fac4a7b97960022ab906f8f8c1da3d5ca0e99"
+    },
+    {
+      "bytes": 787,
+      "path": "conversions/inputs/raster-profile-concatenation-v1.json",
+      "sha256": "203d37dfeeae430ae0019b77b10c8000e7a120fcdd62b4fbdaa7ea5ae8f37032"
+    },
+    {
+      "bytes": 786,
+      "path": "conversions/inputs/raster-profile-v1.json",
+      "sha256": "22eb1f8e7bc14677acae3ddb85b5b59dba53cab7d56b06652f6f74a6b6c1385d"
+    },
+    {
+      "bytes": 5118,
+      "path": "conversions/pm-concatenation/pm-0001.dcm",
+      "sha256": "4fbddfeb45d28a463fc9b3c8f2bad5bb01058a8c6ed8399f9235be41c2ae13c1"
+    },
+    {
+      "bytes": 5118,
+      "path": "conversions/pm-concatenation/pm-0002.dcm",
+      "sha256": "5e22bacda1f6f84a6aea7017e4919d10a0032cbe94e016f7bdb942ead44ffa72"
+    },
+    {
+      "bytes": 5114,
+      "path": "conversions/pm-concatenation/pm-0003.dcm",
+      "sha256": "22fccfc2539c4b7f2bab3cd2661796ae28e4655120fa2bcbbb1404f54f2e844c"
+    },
+    {
+      "bytes": 4980,
+      "path": "conversions/pm-float32/pm-0001.dcm",
+      "sha256": "a7739171e5bab7735492aa20001327be5740e7b52e1bec3348bf213b6147b624"
+    },
+    {
+      "bytes": 35231,
+      "path": "figures/coordinate-error.svg",
+      "sha256": "00dff4dab0b120ff4020da03d6e0a7bb69a91fbe2755b35ad08f19980f7b4734"
+    },
+    {
+      "bytes": 7316,
+      "path": "figures/mask-metrics.svg",
+      "sha256": "fe0b499aea7692c77f8f474cd10bb1605a536a8ca78a18fe196b8ce0a838848e"
+    },
+    {
+      "bytes": 35870,
+      "path": "figures/memory.svg",
+      "sha256": "d381077903f98360f7442997ef7540ed63fdb31ebb1e7d153d17c03622f3aeb8"
+    },
+    {
+      "bytes": 35238,
+      "path": "figures/runtime.svg",
+      "sha256": "98979c763f1535069f064ba081e553cfbe361bbc152840129a374926e2c9649e"
+    },
+    {
+      "bytes": 7514,
+      "path": "fixtures/ann-2d-frame.dcm",
+      "sha256": "5fd5613f67fd353c8513b24fbb96ed4a1f9f75fc4e076356c85b55ee72e2d5fe"
+    },
+    {
+      "bytes": 7504,
+      "path": "fixtures/ann-2d-volume-level1.dcm",
+      "sha256": "43327faf1ff0c611386c5709268c7e1cff9d4a90e383414e9060142c6bcd3150"
+    },
+    {
+      "bytes": 7504,
+      "path": "fixtures/ann-2d-volume.dcm",
+      "sha256": "976789a7921964429434db127eebed2f94d52531933ec554ec1c2fbdbce3b3e5"
+    },
+    {
+      "bytes": 7688,
+      "path": "fixtures/ann-3d-common-z.dcm",
+      "sha256": "3044c8d6f9c55b60af0a9831ad1c17c8e57d3ebf1910968e9087f5e65226e0a0"
+    },
+    {
+      "bytes": 7860,
+      "path": "fixtures/ann-3d-xyz.dcm",
+      "sha256": "6df09e89e38b22088e1d8a2cd9e19b92f65f9cad2c506ce88a4be204d3a5cc6d"
+    },
+    {
+      "bytes": 217967,
+      "path": "fixtures/ground-truth-v1.json",
+      "sha256": "86b7c243da2714bfc1afc0e709b988be6217b477c11248ec15c07c4efdca279c"
+    },
+    {
+      "bytes": 3970,
+      "path": "fixtures/pm-float32.dcm",
+      "sha256": "b94c7649445c39c5dd163345f3ba37556898701614c4ad236616436569115ba2"
+    },
+    {
+      "bytes": 9512,
+      "path": "fixtures/seg-binary-reordered.dcm",
+      "sha256": "471f654557d6d9af5cb54cb1b48822d772bfafc0f3d89b8ee26e88d403979547"
+    },
+    {
+      "bytes": 3582,
+      "path": "fixtures/seg-binary.dcm",
+      "sha256": "36c94ee382395d6a168d70db8987bc197ea0479adca1415e75d1b213aba992c3"
+    },
+    {
+      "bytes": 3298,
+      "path": "fixtures/seg-fractional.dcm",
+      "sha256": "028d58806e9e2671ef9be21aa5c1776715765f878612a73d3a6320e031cb277d"
+    },
+    {
+      "bytes": 4030,
+      "path": "fixtures/seg-labelmap.dcm",
+      "sha256": "52b466c56739b05d277fb695e5a2e0a48d6a9f83760277d3186f3796b1177732"
+    },
+    {
+      "bytes": 2070,
+      "path": "fixtures/source-wsi-level1.dcm",
+      "sha256": "faebb2bd7f5ddc0e082f223a50666189b6670b5833efcd9472eb091a8d1a728c"
+    },
+    {
+      "bytes": 2254,
+      "path": "fixtures/source-wsi.dcm",
+      "sha256": "93101495eff22323f91ae43a27e67111e135bd8bc65f3cc2a98cd2f198956f5f"
+    },
+    {
+      "bytes": 5686,
+      "path": "fixtures/sr-tid1500-seg-reference.dcm",
+      "sha256": "5f294ee445397902478c13d97c97c505b41f8cf82f87a362e49958ee6d56bc8c"
+    },
+    {
+      "bytes": 5260,
+      "path": "fixtures/sr-tid1500.dcm",
+      "sha256": "bf3839da5fd9ba0e7480e19c0d8c090754bf391b30f333e57df128a9de60a335"
+    },
+    {
+      "bytes": 1332702,
+      "path": "observations.csv",
+      "sha256": "86985af554d7a7aa85942bb3e677752395cd140ded547cec176ee338d4b813d4"
+    },
+    {
+      "bytes": 1395696,
+      "path": "observations.jsonl",
+      "sha256": "1d0cddcba6885fbebd5de75c09cd2d78c5550066c597fd4a9b5b467f477a831b"
+    },
+    {
+      "bytes": 2254,
+      "path": "orthanc-retrieved/2.25.100000000000000000000000000000003-retrieved.dcm",
+      "sha256": "93101495eff22323f91ae43a27e67111e135bd8bc65f3cc2a98cd2f198956f5f"
+    },
+    {
+      "bytes": 2070,
+      "path": "orthanc-retrieved/2.25.100000000000000000000000000000010-retrieved.dcm",
+      "sha256": "faebb2bd7f5ddc0e082f223a50666189b6670b5833efcd9472eb091a8d1a728c"
+    },
+    {
+      "bytes": 3970,
+      "path": "orthanc-retrieved/2.25.100000000000000000000000000000014-retrieved.dcm",
+      "sha256": "b94c7649445c39c5dd163345f3ba37556898701614c4ad236616436569115ba2"
+    },
+    {
+      "bytes": 5260,
+      "path": "orthanc-retrieved/2.25.100000000000000000000000000000016-retrieved.dcm",
+      "sha256": "bf3839da5fd9ba0e7480e19c0d8c090754bf391b30f333e57df128a9de60a335"
+    },
+    {
+      "bytes": 5686,
+      "path": "orthanc-retrieved/2.25.100000000000000000000000000000018-retrieved.dcm",
+      "sha256": "5f294ee445397902478c13d97c97c505b41f8cf82f87a362e49958ee6d56bc8c"
+    },
+    {
+      "bytes": 5118,
+      "path": "orthanc-retrieved/2.25.136997970932156736864665695454830300709-retrieved.dcm",
+      "sha256": "5e22bacda1f6f84a6aea7017e4919d10a0032cbe94e016f7bdb942ead44ffa72"
+    },
+    {
+      "bytes": 7504,
+      "path": "orthanc-retrieved/2.25.21000000000000000000000000000001-retrieved.dcm",
+      "sha256": "976789a7921964429434db127eebed2f94d52531933ec554ec1c2fbdbce3b3e5"
+    },
+    {
+      "bytes": 7514,
+      "path": "orthanc-retrieved/2.25.21000000000000000000000000000002-retrieved.dcm",
+      "sha256": "5fd5613f67fd353c8513b24fbb96ed4a1f9f75fc4e076356c85b55ee72e2d5fe"
+    },
+    {
+      "bytes": 7688,
+      "path": "orthanc-retrieved/2.25.21000000000000000000000000000003-retrieved.dcm",
+      "sha256": "3044c8d6f9c55b60af0a9831ad1c17c8e57d3ebf1910968e9087f5e65226e0a0"
+    },
+    {
+      "bytes": 7860,
+      "path": "orthanc-retrieved/2.25.21000000000000000000000000000004-retrieved.dcm",
+      "sha256": "6df09e89e38b22088e1d8a2cd9e19b92f65f9cad2c506ce88a4be204d3a5cc6d"
+    },
+    {
+      "bytes": 7504,
+      "path": "orthanc-retrieved/2.25.21000000000000000000000000000005-retrieved.dcm",
+      "sha256": "43327faf1ff0c611386c5709268c7e1cff9d4a90e383414e9060142c6bcd3150"
+    },
+    {
+      "bytes": 4980,
+      "path": "orthanc-retrieved/2.25.222149545147433176336767630474672227562-retrieved.dcm",
+      "sha256": "a7739171e5bab7735492aa20001327be5740e7b52e1bec3348bf213b6147b624"
+    },
+    {
+      "bytes": 6160,
+      "path": "orthanc-retrieved/2.25.253586870289662633290687338226366316591-retrieved.dcm",
+      "sha256": "622d8c3d2e477b64c025751ac2ec7e2835dd7311bcf6b5c517eb51fe5a3a515f"
+    },
+    {
+      "bytes": 2446,
+      "path": "orthanc-retrieved/2.25.274934582120093071157104638391890835576-retrieved.dcm",
+      "sha256": "369a6addd4e3799826ce5a1f2a6cdab655949b88157b6f5ac75a8fc8063eacf9"
+    },
+    {
+      "bytes": 5686,
+      "path": "orthanc-retrieved/2.25.314749311888739211777644259041699447810-retrieved.dcm",
+      "sha256": "2ffa8033b142a6d5aff406c010e6c59ebf8475e2ffbe4a36fd7c4cd626a509d1"
+    },
+    {
+      "bytes": 5650,
+      "path": "orthanc-retrieved/2.25.48761403092432345785610699912532725844-retrieved.dcm",
+      "sha256": "4d7bb2d5bc394031111a42d2a3144ac54d8b0165d08faa02d449dfb99b38f3af"
+    },
+    {
+      "bytes": 3582,
+      "path": "orthanc-retrieved/2.25.51000000000000000000000000000001-retrieved.dcm",
+      "sha256": "36c94ee382395d6a168d70db8987bc197ea0479adca1415e75d1b213aba992c3"
+    },
+    {
+      "bytes": 4030,
+      "path": "orthanc-retrieved/2.25.51000000000000000000000000000002-retrieved.dcm",
+      "sha256": "52b466c56739b05d277fb695e5a2e0a48d6a9f83760277d3186f3796b1177732"
+    },
+    {
+      "bytes": 3298,
+      "path": "orthanc-retrieved/2.25.51000000000000000000000000000003-retrieved.dcm",
+      "sha256": "028d58806e9e2671ef9be21aa5c1776715765f878612a73d3a6320e031cb277d"
+    },
+    {
+      "bytes": 9512,
+      "path": "orthanc-retrieved/2.25.51000000000000000000000000000004-retrieved.dcm",
+      "sha256": "471f654557d6d9af5cb54cb1b48822d772bfafc0f3d89b8ee26e88d403979547"
+    },
+    {
+      "bytes": 5118,
+      "path": "orthanc-retrieved/2.25.67040389348059466280887541317108544223-retrieved.dcm",
+      "sha256": "4fbddfeb45d28a463fc9b3c8f2bad5bb01058a8c6ed8399f9235be41c2ae13c1"
+    },
+    {
+      "bytes": 5114,
+      "path": "orthanc-retrieved/2.25.9671773839464097244113904516837592641-retrieved.dcm",
+      "sha256": "22fccfc2539c4b7f2bab3cd2661796ae28e4655120fa2bcbbb1404f54f2e844c"
+    },
+    {
+      "bytes": 8304,
+      "path": "roundtrips/ann-2d-frame-roundtrip.dcm",
+      "sha256": "4d86a29ea60e027d508e13ee66cbf53811e407ef33d8766f867157d8aebfd2e2"
+    },
+    {
+      "bytes": 8294,
+      "path": "roundtrips/ann-2d-volume-level1-roundtrip.dcm",
+      "sha256": "6df0da90067b3fee497b6966eefc36ca03d26ea7486e5b2c93cfc52c848d044e"
+    },
+    {
+      "bytes": 8294,
+      "path": "roundtrips/ann-2d-volume-roundtrip.dcm",
+      "sha256": "1173c06ac17a77160402a8049613c27c52a0be7a2c1c905f2da0182f72560b7d"
+    },
+    {
+      "bytes": 8478,
+      "path": "roundtrips/ann-3d-common-z-roundtrip.dcm",
+      "sha256": "438e369803e087ffdd3f1f99282badab8ff94a2193500d10d418af2ab043e473"
+    },
+    {
+      "bytes": 8650,
+      "path": "roundtrips/ann-3d-xyz-roundtrip.dcm",
+      "sha256": "6e2d2acc318e6a6c57dcf10cf49de7dbbf384914ec57fcc306469b8114bd2855"
+    },
+    {
+      "bytes": 10952,
+      "path": "roundtrips/seg-binary-reordered-roundtrip.dcm",
+      "sha256": "6e9357eacdd019bc280e6803361d2bf212658c904f4b200435d5903e78efec16"
+    },
+    {
+      "bytes": 10960,
+      "path": "roundtrips/seg-binary-roundtrip.dcm",
+      "sha256": "e7a364055de714bfedbf97207eaa936b677294c590b02530ab1eaec9cc7f4335"
+    },
+    {
+      "bytes": 6208,
+      "path": "scale/ann-scale-1000-input.dcm",
+      "sha256": "8556bb1d2650a49aa188a42610f6185fb2aaa5d5a49195fbcf86742ded69c3de"
+    },
+    {
+      "bytes": 10132,
+      "path": "scale/ann-scale-1000-roundtrip.dcm",
+      "sha256": "8db6b5eeddcfa858d2ce4793d49bdd6ef3b99815bed3f0d808785699f2919e62"
+    },
+    {
+      "bytes": 42218,
+      "path": "scale/ann-scale-10000-input.dcm",
+      "sha256": "7f0baed89af0620b0742207cfaf75ea02e56c0030ca447a9a0d112169869fc91"
+    },
+    {
+      "bytes": 82142,
+      "path": "scale/ann-scale-10000-roundtrip.dcm",
+      "sha256": "04bac605beb732bcefea94abecde33f127524a4f44c624027131a8f91e18da50"
+    },
+    {
+      "bytes": 402218,
+      "path": "scale/ann-scale-100000-input.dcm",
+      "sha256": "14afe365676ba16e7489db21b6301310ea50c060ddab573b85897781dafab099"
+    },
+    {
+      "bytes": 802142,
+      "path": "scale/ann-scale-100000-roundtrip.dcm",
+      "sha256": "cd92e706a4f70fa903f897ad22295ebbea0dda023127572f91590dea21850e87"
+    },
+    {
+      "bytes": 4002228,
+      "path": "scale/ann-scale-1000000-input.dcm",
+      "sha256": "f5d73056630b1cc002d5ba7cb018c683d422b62a35445b94997beeab3b150867"
+    },
+    {
+      "bytes": 8002152,
+      "path": "scale/ann-scale-1000000-roundtrip.dcm",
+      "sha256": "7dbc37ea5ef5ad8f055ee6ea844cc14821431bef31fe356d31c42d8799e42f23"
+    },
+    {
+      "bytes": 20002228,
+      "path": "scale/ann-scale-5000000-input.dcm",
+      "sha256": "70b8b180e792e84486e2d5cd647e592716baba36ecf79a4f8f674f7d2e193dac"
+    },
+    {
+      "bytes": 40002152,
+      "path": "scale/ann-scale-5000000-roundtrip.dcm",
+      "sha256": "4e929283a58c2d9ed6b402b0ed8b9ac3b110b0e9904679d094b52f7dc1f3b4b9"
+    },
+    {
+      "bytes": 224,
+      "path": "summary.csv",
+      "sha256": "908e44866a954012a34594e53495cc3206973518eeb0b42bcf9a5f5b484bcaad"
+    },
+    {
+      "bytes": 280,
+      "path": "summary.json",
+      "sha256": "3fdf6c4630f2079bdafb14eb68bc3c4690d718d5b5c5f172bdd68f58b5d62b7f"
+    }
+  ],
+  "created_at": "2026-08-15T18:16:00Z",
+  "environment": {
+    "architecture": "aarch64",
+    "harness": "0.1.0",
+    "os": "macos"
+  },
+  "metadata": {
+    "dicom_edition": "2026c",
+    "profile": "full",
+    "reference": {
+      "packages": {
+        "highdicom": "0.28.1",
+        "numpy": "2.5.2",
+        "pydcm": "0.4.5",
+        "pydicom": "3.0.2"
+      },
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "python": "3.12.9 (v3.12.9:fdb81425a9a, Feb  4 2025, 12:21:36) [Clang 13.0.0 (clang-1300.0.29.30)]"
+    }
+  },
+  "run_id": "orthanc-pydcm-20260815-v1",
+  "schema_version": 1
+}

@@ -17,7 +17,7 @@ fn validator_captures_version_edition_commands_outputs_and_unsupported_status() 
     let second = directory.path().join("second.dcm");
     fs::write(&first, b"dicom").unwrap();
     fs::write(&second, b"dicom").unwrap();
-    let validation_script = "printf 'unsupported object'; printf 'detail' >&2; exit 3";
+    let validation_script = "sleep 0.2; printf 'unsupported object'; printf 'detail' >&2; exit 3";
     let version_script = "printf 'validator 1.2.3'";
     let spec = ValidatorSpec {
         name: "synthetic".to_owned(),

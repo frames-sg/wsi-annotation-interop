@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
@@ -126,6 +126,40 @@ exit 9
 
     assert!(error.contains("exited"), "{error}");
     assert_eq!(fs::read_to_string(launches).unwrap().lines().count(), 3);
+}
+
+#[test]
+fn local_orthanc_retries_a_transient_executable_write_lock() {
+    let directory = tempdir().unwrap();
+    let executable = directory.path().join("synthetic-orthanc");
+    fs::write(
+        &executable,
+        r#"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf 'synthetic Orthanc 1.0'
+  exit 0
+fi
+printf 'synthetic startup failure\n' >&2
+exit 9
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&executable, permissions).unwrap();
+    let writable_executable = OpenOptions::new().write(true).open(&executable).unwrap();
+    let release_write_lock = thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_millis(25));
+        drop(writable_executable);
+    });
+    let mut orthanc =
+        LocalOrthanc::new(executable, Vec::new(), std::time::Duration::from_secs(1)).unwrap();
+
+    let error = orthanc.start().unwrap_err();
+    release_write_lock.join().unwrap();
+
+    assert!(error.contains("exited"), "{error}");
+    assert!(!error.contains("Text file busy"), "{error}");
 }
 
 #[test]

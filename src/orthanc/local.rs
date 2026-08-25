@@ -14,6 +14,8 @@ use crate::process::{CapturedStream, CommandSpec, ProcessError, join_reader, rea
 
 const ORTHANC_LOG_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 const ORTHANC_START_ATTEMPTS: usize = 3;
+const ORTHANC_VERSION_ATTEMPTS: usize = 3;
+const ORTHANC_VERSION_RETRY_DELAY: Duration = Duration::from_millis(25);
 
 pub struct LocalOrthanc {
     executable: PathBuf,
@@ -248,17 +250,26 @@ impl LocalOrthanc {
             self.executable.as_os_str().to_owned(),
             vec!["--version".into()],
         )?;
-        match run(&command.process_spec(Duration::from_secs(10))) {
-            Ok(output) => {
-                self.version_stdout = String::from_utf8_lossy(&output.stdout.bytes).into_owned();
-                self.version_stderr = String::from_utf8_lossy(&output.stderr.bytes).into_owned();
-                Ok(())
+        let process = command.process_spec(Duration::from_secs(10));
+        for attempt in 1..=ORTHANC_VERSION_ATTEMPTS {
+            match run(&process) {
+                Ok(output) => {
+                    self.version_stdout =
+                        String::from_utf8_lossy(&output.stdout.bytes).into_owned();
+                    self.version_stderr =
+                        String::from_utf8_lossy(&output.stderr.bytes).into_owned();
+                    return Ok(());
+                }
+                Err(ProcessError::Start(_)) if attempt < ORTHANC_VERSION_ATTEMPTS => {
+                    thread::sleep(ORTHANC_VERSION_RETRY_DELAY);
+                }
+                Err(ProcessError::TimedOut { .. }) => {
+                    return Err("Orthanc --version timed out after 10 seconds".to_owned());
+                }
+                Err(error) => return Err(format!("could not query Orthanc version: {error}")),
             }
-            Err(ProcessError::TimedOut { .. }) => {
-                Err("Orthanc --version timed out after 10 seconds".to_owned())
-            }
-            Err(error) => Err(format!("could not query Orthanc version: {error}")),
         }
+        unreachable!("Orthanc version attempts are nonzero")
     }
 
     fn wait_until_ready(&mut self) -> Result<(), String> {

@@ -1,6 +1,14 @@
 #![cfg(unix)]
 
+#[cfg(target_os = "linux")]
+use std::ffi::OsString;
+#[cfg(target_os = "linux")]
+use std::fs;
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStringExt;
 use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -45,6 +53,10 @@ fn viewer_probe_validates_success_and_records_external_peak_rss() {
     assert_eq!(observation.command.last().unwrap(), "ann.dcm");
     assert!(observation.command.iter().any(|part| part == "--payload"));
     assert!(observation.peak_rss_bytes > 0);
+    assert!(observation.rss_sampled);
+    assert_eq!(observation.sample_interval_ms, Some(100));
+    assert!(!observation.stderr_truncated);
+    assert!(observation.stdout_total_bytes > 0);
 }
 
 #[test]
@@ -180,4 +192,67 @@ fn viewer_probe_rejects_a_conversion_report_for_the_wrong_operation() {
             .to_string()
             .contains("reported operation convert-geojson")
     );
+}
+
+#[test]
+#[ignore = "adapter calibration; run in release mode"]
+fn representative_probe_adapter_calibration() {
+    let report: Value = serde_json::from_str(include_str!("data/ann-report.json")).unwrap();
+    let probe = shell_probe(print_json(&report, false), Duration::from_secs(2));
+    let mut samples = Vec::new();
+    for repetition in 0..8 {
+        let observation = probe
+            .inspect(
+                Path::new("source.dcm"),
+                Path::new("ann.dcm"),
+                None,
+                PayloadMode::Full,
+            )
+            .unwrap();
+        assert_eq!(observation.report["status"], "ok");
+        if repetition > 0 {
+            samples.push(observation.elapsed_ms);
+        }
+    }
+    samples.sort_by(f64::total_cmp);
+    println!(
+        "probe-adapter repetitions=7 median_ms={:.3} min_ms={:.3} max_ms={:.3}",
+        samples[3], samples[0], samples[6]
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn viewer_probe_invokes_non_utf8_paths_without_loss() {
+    let directory = tempfile::tempdir().unwrap();
+    let annotation = directory
+        .path()
+        .join(PathBuf::from(OsString::from_vec(b"ann-\xff.dcm".to_vec())));
+    fs::write(&annotation, b"dicom").unwrap();
+    let report: Value = serde_json::from_str(include_str!("data/ann-report.json")).unwrap();
+    let script = format!(
+        "for last do :; done; test -f \"$last\" || exit 9; {}",
+        print_json(&report, false)
+    );
+    let probe = ViewerProbe::from_program(
+        OsString::from("/bin/sh"),
+        vec![
+            OsString::from("-c"),
+            OsString::from(script),
+            OsString::from("annotation-probe-test"),
+        ],
+        Some(Duration::from_secs(2)),
+    )
+    .unwrap();
+
+    let observation = probe
+        .inspect(
+            Path::new("source.dcm"),
+            &annotation,
+            None,
+            PayloadMode::Digest,
+        )
+        .unwrap();
+
+    assert_eq!(observation.report["status"], "ok");
 }

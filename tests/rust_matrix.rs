@@ -5,10 +5,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tempfile::tempdir;
-use wsi_annotation_interop::ground_truth::build_core_ground_truth;
-use wsi_annotation_interop::matrix::run_core_matrix;
 use wsi_annotation_interop::probe::ViewerProbe;
 use wsi_annotation_interop::shim::{FixtureSet, ReferenceShim};
+use wsi_annotation_interop::{build_core_ground_truth, run_core_matrix};
 
 #[test]
 fn rust_matrix_rejects_tampered_ground_truth_before_running_tools() {

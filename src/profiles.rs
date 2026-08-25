@@ -5,17 +5,25 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::conversion_matrix::{ConversionMatrixResult, run_conversion_matrices};
-use crate::matrix::run_core_matrix;
+use crate::conversion_matrix::{ConversionMatrixResult, ConversionTarget};
 use crate::orthanc::{DicomwebObject, LocalOrthanc, verify_dicomweb_transport};
 use crate::probe::ViewerProbe;
 use crate::results::RunWriter;
-use crate::scale::{default_scale_cases, run_scale_cases};
+use crate::scale::{ScaleStatus, default_scale_cases, run_scale_cases};
 use crate::shim::{FixtureSet, ReferenceShim};
 use crate::validators::{
-    qualify_tiled_segmentation_sr_validator_defect, qualify_validate_iods_pm_defect,
-    qualify_validate_iods_seg_defect, run_standard_validators,
+    ValidatorStatus, qualify_tiled_segmentation_sr_validator_defect,
+    qualify_validate_iods_pm_defect, qualify_validate_iods_seg_defect, run_standard_validators,
 };
+
+mod baseline;
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ProfileKind {
+    Core,
+    Full,
+}
 
 #[derive(Debug)]
 pub struct ProfileResult {
@@ -36,46 +44,26 @@ pub fn run_core_profile(
     run_id: &str,
 ) -> Result<ProfileResult, String> {
     let environment = reference.environment().map_err(|error| error.to_string())?;
-    let mut writer = RunWriter::new(
+    let mut writer = RunWriter::new_with_probe(
         results_root,
         run_id,
-        json!({"profile": "core", "reference": environment}),
+        json!({
+            "profile": ProfileKind::Core,
+            "baseline_definition_version": baseline::DEFINITION_VERSION,
+            "reference": environment,
+        }),
+        Some(probe.program()),
     )
     .map_err(|error| error.to_string())?;
-    let fixtures = reference
-        .generate_core(&writer.path().join("fixtures"))
-        .map_err(|error| error.to_string())?;
-    let matrix = run_core_matrix(
-        &fixtures,
-        reference,
-        probe,
-        &writer.path().join("roundtrips"),
-    )?;
-    let conversion = run_conversion_matrices(
-        &fixtures,
-        reference,
-        probe,
-        &writer.path().join("conversions"),
-    )?;
-    let ok = matrix.is_ok() && conversion.is_ok();
-    let mut observations = matrix
-        .observations
-        .iter()
-        .map(|observation| tagged("matrix", observation))
-        .collect::<Result<Vec<_>, _>>()?;
-    observations.extend(
-        conversion
-            .observations
-            .iter()
-            .map(|observation| tagged("conversion", observation))
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    observations.push(qualification_observation(reference, &fixtures)?);
+    let baseline = baseline::run(reference, probe, writer.path())?;
     writer
-        .write_observations(&observations)
+        .write_observations(&baseline.observations)
         .map_err(|error| error.to_string())?;
     let manifest = writer.finalize().map_err(|error| error.to_string())?;
-    Ok(ProfileResult { manifest, ok })
+    Ok(ProfileResult {
+        manifest,
+        ok: baseline.status.is_ok(),
+    })
 }
 
 /// Run validators, scale cases, and local Orthanc transport in addition to core.
@@ -94,42 +82,30 @@ pub fn run_full_profile(
     orthanc_plugins: &[PathBuf],
 ) -> Result<ProfileResult, String> {
     let environment = reference.environment().map_err(|error| error.to_string())?;
-    let mut writer = RunWriter::new(
+    let mut writer = RunWriter::new_with_probe(
         results_root,
         run_id,
-        json!({"profile": "full", "dicom_edition": edition, "reference": environment}),
+        json!({
+            "profile": ProfileKind::Full,
+            "baseline_definition_version": baseline::DEFINITION_VERSION,
+            "dicom_edition": edition,
+            "orthanc": {
+                "executable": orthanc_executable.map(|path| path.to_string_lossy().into_owned()),
+                "plugins": orthanc_plugins
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>(),
+            },
+            "reference": environment,
+        }),
+        Some(probe.program()),
     )
     .map_err(|error| error.to_string())?;
-    let fixtures = reference
-        .generate_core(&writer.path().join("fixtures"))
-        .map_err(|error| error.to_string())?;
-    let matrix = run_core_matrix(
-        &fixtures,
-        reference,
-        probe,
-        &writer.path().join("roundtrips"),
-    )?;
-    let matrix_ok = matrix.is_ok();
-    let conversion = run_conversion_matrices(
-        &fixtures,
-        reference,
-        probe,
-        &writer.path().join("conversions"),
-    )?;
-    let conversion_ok = conversion.is_ok();
-    let mut observations = matrix
-        .observations
-        .iter()
-        .map(|observation| tagged("matrix", observation))
-        .collect::<Result<Vec<_>, _>>()?;
-    observations.extend(
-        conversion
-            .observations
-            .iter()
-            .map(|observation| tagged("conversion", observation))
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    observations.push(qualification_observation(reference, &fixtures)?);
+    let baseline = baseline::run(reference, probe, writer.path())?;
+    let baseline_ok = baseline.status.is_ok();
+    let fixtures = baseline.fixtures;
+    let conversion = baseline.conversion;
+    let mut observations = baseline.observations;
 
     let validator_files =
         validator_files(&fixtures, &writer.path().join("roundtrips"), &conversion)?;
@@ -146,8 +122,8 @@ pub fn run_full_profile(
     qualify_tiled_segmentation_sr_validator_defect(&mut validators, &fixtures.sr_seg);
     let validators_ok = validators.iter().all(|observation| {
         matches!(
-            observation.status.as_str(),
-            "passed" | "known_validator_defect"
+            observation.status,
+            ValidatorStatus::Passed | ValidatorStatus::KnownValidatorDefect
         )
     });
     for (index, validator) in validators.iter().enumerate() {
@@ -170,7 +146,7 @@ pub fn run_full_profile(
     let scale_ok = !required_scale.is_empty()
         && required_scale
             .iter()
-            .all(|observation| observation.status == "passed");
+            .all(|observation| observation.status == ScaleStatus::Passed);
     observations.extend(
         scale
             .iter()
@@ -193,29 +169,8 @@ pub fn run_full_profile(
     let manifest = writer.finalize().map_err(|error| error.to_string())?;
     Ok(ProfileResult {
         manifest,
-        ok: matrix_ok && conversion_ok && validators_ok && scale_ok && orthanc_ok,
+        ok: baseline_ok && validators_ok && scale_ok && orthanc_ok,
     })
-}
-
-fn qualification_observation(
-    reference: &ReferenceShim,
-    fixtures: &FixtureSet,
-) -> Result<Value, String> {
-    let qualification = reference
-        .qualify_pydcm(
-            &fixtures.source,
-            &fixtures.ann["2D_VOLUME"],
-            &fixtures.seg["BINARY"],
-        )
-        .map_err(|error| error.to_string())?;
-    let mut observation = tagged("qualification", &qualification)?;
-    observation["case_id"] = json!("pydcm-qualification");
-    observation["status"] = json!(if qualification.qualified {
-        "qualified"
-    } else {
-        "unqualified"
-    });
-    Ok(observation)
 }
 
 fn validator_files(
@@ -246,7 +201,7 @@ fn validator_files(
         conversion
             .observations
             .iter()
-            .filter(|observation| observation.status == "passed")
+            .filter(|observation| observation.status.is_passed())
             .flat_map(|observation| observation.output_paths.iter().cloned()),
     );
     Ok(files)
@@ -393,21 +348,20 @@ fn transport_specs(
     )?);
     specs.push(transport_spec(reference, &fixtures.pm, TransportKind::Pm)?);
     for observation in &conversion.observations {
-        if observation.status != "passed" {
+        if !observation.status.is_passed() {
             continue;
         }
         for path in &observation.output_paths {
-            let kind = match observation.target.as_str() {
-                "ann" => TransportKind::Ann {
+            let kind = match observation.target {
+                ConversionTarget::Ann => TransportKind::Ann {
                     source: fixtures.source.clone(),
                     canonical: None,
                 },
-                "seg" => TransportKind::Seg {
+                ConversionTarget::Seg => TransportKind::Seg {
                     source: fixtures.source.clone(),
                 },
-                "sr" => TransportKind::Sr,
-                "pm" => TransportKind::Pm,
-                target => return Err(format!("unsupported conversion transport target {target}")),
+                ConversionTarget::Sr => TransportKind::Sr,
+                ConversionTarget::Pm => TransportKind::Pm,
             };
             specs.push(transport_spec(reference, path, kind)?);
         }
@@ -460,7 +414,9 @@ fn orthanc_runtime(runner: &LocalOrthanc, status: &str, started: Instant, messag
         "version_stdout": runner.version_stdout(),
         "version_stderr": runner.version_stderr(),
         "stdout": runner.stdout(),
+        "stdout_truncated": runner.stdout_truncated(),
         "stderr": runner.stderr(),
+        "stderr_truncated": runner.stderr_truncated(),
         "message": message,
     })
 }

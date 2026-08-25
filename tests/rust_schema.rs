@@ -1,7 +1,8 @@
 use serde_json::Value;
 use wsi_annotation_interop::schema::{
-    validate_conversion_report, validate_pathology_mapping, validate_probe_report,
-    validate_raster_profile, validate_tiled_manifest,
+    RunManifestVersion, validate_compatible_run_manifest, validate_conversion_report,
+    validate_matrix_observation, validate_pathology_mapping, validate_probe_report,
+    validate_raster_profile, validate_run_manifest, validate_tiled_manifest,
 };
 
 fn reference_report() -> Value {
@@ -9,8 +10,60 @@ fn reference_report() -> Value {
 }
 
 #[test]
+fn committed_v1_manifest_remains_readable_without_fabricated_provenance() {
+    let legacy: Value = serde_json::from_str(include_str!(
+        "../results/orthanc-pydcm-20260815-v1/manifest.json"
+    ))
+    .unwrap();
+
+    assert_eq!(
+        validate_compatible_run_manifest(&legacy).unwrap(),
+        RunManifestVersion::V1Legacy
+    );
+    assert!(legacy.get("provenance").is_none());
+}
+
+#[test]
+fn published_run_manifest_v2_validates_and_rejects_v1() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut writer = wsi_annotation_interop::results::RunWriter::new(
+        directory.path(),
+        "schema-v2",
+        serde_json::json!({"profile": "core"}),
+    )
+    .unwrap();
+    writer
+        .write_observations(&[serde_json::json!({"status": "passed"})])
+        .unwrap();
+    let path = writer.finalize().unwrap();
+    let mut manifest: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    validate_run_manifest(&manifest).unwrap();
+
+    manifest["schema_version"] = serde_json::json!(1);
+    assert!(validate_run_manifest(&manifest).is_err());
+}
+
+#[test]
 fn probe_schema_accepts_the_reference_report() {
     validate_probe_report(&reference_report()).unwrap();
+}
+
+#[test]
+fn matrix_observation_v2_schema_preserves_phase_evidence() {
+    let observation: Value =
+        serde_json::from_str(include_str!("../examples/matrix-observation-v2.json")).unwrap();
+    validate_matrix_observation(&observation).unwrap();
+
+    let mut missing_phase_status = observation.clone();
+    missing_phase_status["phases"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("status");
+    assert!(validate_matrix_observation(&missing_phase_status).is_err());
+
+    let mut old_version = observation;
+    old_version["schema_version"] = serde_json::json!(1);
+    assert!(validate_matrix_observation(&old_version).is_err());
 }
 
 #[test]

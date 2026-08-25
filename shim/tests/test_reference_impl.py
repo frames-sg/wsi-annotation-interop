@@ -10,6 +10,7 @@ import numpy as np
 import pydicom
 from wsi_reference.fixtures import build_scale_ann, generate_core_fixtures
 from wsi_reference.highdicom_adapter import read_dataset
+from wsi_reference.normalize import normalize_seg
 from wsi_reference.pm_normalize import normalize_pm, normalize_pm_dataset
 from wsi_reference.pydcm_adapter import qualify_pydcm
 from wsi_reference.sr_normalize import normalize_sr
@@ -71,8 +72,14 @@ def test_reference_fixtures_are_deterministic_non_phi_and_cover_required_forms(
         expected_type = "3D" if form.startswith("3D") else "2D"
         assert annotation.AnnotationCoordinateType == expected_type
 
-    for path in first.seg.values():
-        assert isinstance(read_dataset(pydicom.dcmread(path)), hd.seg.Segmentation)
+    for kind, path in first.seg.items():
+        dataset = pydicom.dcmread(path)
+        assert isinstance(read_dataset(dataset), hd.seg.Segmentation)
+        if kind == "LABELMAP":
+            background = dataset.SegmentSequence[0]
+            assert int(background.SegmentNumber) == 0
+            assert len(background.SegmentationAlgorithmIdentificationSequence) == 1
+            assert normalize_seg(path, first.source)["segments"][0]["algorithms"] == []
 
     assert isinstance(read_dataset(pydicom.dcmread(first.pm)), hd.pm.ParametricMap)
     assert isinstance(read_dataset(pydicom.dcmread(first.sr)), hd.sr.Comprehensive3DSR)

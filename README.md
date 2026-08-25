@@ -21,7 +21,7 @@ generation.
 
 Public schemas and tested examples live under `schema/` and `examples/`.
 Implementation and review constraints are recorded in
-[Engineering quality and anti-slop gates](docs/ENGINEERING_QUALITY.md).
+[Engineering quality gates](docs/ENGINEERING_QUALITY.md).
 
 ## Development
 
@@ -44,6 +44,10 @@ the Rust binary:
 ```console
 ./scripts/check-core.sh
 ```
+
+Use `./scripts/check-quality.sh` for the repository-only executable gate. The explicit full gate is
+`ORTHANC_EXECUTABLE=/absolute/path/to/Orthanc ./scripts/check-full.sh`; it fails when Orthanc,
+pydcm, a required validator, or the sibling viewer is unavailable.
 
 Set `DICOM_VIEWER_ROOT` only when the viewer checkout is not the default sibling
 directory.
@@ -80,5 +84,13 @@ remote archive URL is accepted. If a validator, pydcm capability, or Orthanc is 
 the observation is retained as unavailable or unqualified rather than silently omitted.
 
 Each completed run contains checksummed fixtures and roundtrips, JSONL/CSV observations,
-JSON/CSV summaries, coordinate/mask/runtime/memory figures, and a final `manifest.json`.
-Run directories are created exclusively and are never overwritten.
+JSON/CSV summaries, coordinate/mask/runtime/memory figures, and a final schema-v2
+`manifest.json`. The manifest records harness and probe Git state, binary and lockfile hashes,
+toolchains, Python packages, resource policies, schema versions, and CI identity; unavailable
+source identity is `null` with a reason rather than an invented SHA. Run directories are created
+exclusively and are never overwritten.
+
+CI uploads the complete core/full directory together with a compressed bundle, the bundle SHA-256,
+and the manifest SHA-256. The artifact name includes the immutable GitHub run ID and attempt.
+Legacy schema-v1 manifests remain readable, but they do not acquire provenance or retained files
+that their original run did not record.

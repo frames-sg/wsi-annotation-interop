@@ -3,7 +3,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::inputs::ConversionInputs;
-use super::{ConversionObservation, passed, verify_report_outputs};
+use super::{ConversionObservation, ConversionTarget, passed, verify_report_outputs};
 use crate::probe::{RasterChannels, ViewerProbe};
 use crate::shim::{FixtureSet, ReferenceShim};
 
@@ -43,9 +43,8 @@ pub(super) fn run_single(
         return Err("independent PM normalization differs from the f32 profile".to_owned());
     }
     Ok(vec![passed(
-        "pm",
         "pm-float32",
-        "pm",
+        ConversionTarget::Pm,
         &observation,
         vec![path],
         normalized,
@@ -89,9 +88,8 @@ pub(super) fn run_concatenation(
         .collect::<Result<Vec<_>, _>>()?;
     validate_concatenation(&normalized)?;
     Ok(vec![passed(
-        "pm",
         "pm-concatenation",
-        "pm",
+        ConversionTarget::Pm,
         &observation,
         paths,
         Value::Array(normalized),

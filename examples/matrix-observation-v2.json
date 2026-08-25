@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "case_id": "seg-labelmap",
+  "pyramid_level": 0,
+  "status": "failed",
+  "phases": [
+    {
+      "phase": "viewer_inspection",
+      "status": "passed",
+      "command": ["annotation_probe", "inspect", "seg-labelmap.dcm"],
+      "elapsed_ms": 12.5,
+      "peak_rss_bytes": 4096,
+      "output_truncated": false,
+      "message": "",
+      "artifacts": []
+    },
+    {
+      "phase": "rewrite_response",
+      "status": "failed",
+      "error_code": "OPERATION_FAILED",
+      "message": "generic failure is not a specific safe-rewrite rejection",
+      "artifacts": []
+    }
+  ],
+  "inspect_equal": true,
+  "roundtrip_equal": null,
+  "rewrite_rejected": false,
+  "highdicom_readable": true,
+  "coordinate_error_max_px": null,
+  "coordinate_error_median_px": null,
+  "coordinate_error_rms_px": null,
+  "dice": 1.0,
+  "mask_metrics": {"dice": 1.0},
+  "runtime_ms": 12.5,
+  "peak_rss_bytes": 4096,
+  "viewer_runtime": {},
+  "peak_tracked_heap_bytes": 2048,
+  "viewer_implementation": {"name": "dicom-viewer", "version": "0.1.0"},
+  "probe_commands": {
+    "viewer_inspection": ["annotation_probe", "inspect", "seg-labelmap.dcm"]
+  },
+  "input_bytes": 1024,
+  "output_bytes": null,
+  "input_sop_instance_uid": "1.2.826.0.1",
+  "output_sop_instance_uid": null,
+  "message": "read-only SEG rewrite was not safely rejected (code OPERATION_FAILED)"
+}

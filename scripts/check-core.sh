@@ -14,13 +14,4 @@ cargo test --manifest-path "${viewer_root}/Cargo.toml" \
 cargo build --manifest-path "${viewer_root}/Cargo.toml" \
   -p dicom-viewer --bin annotation_probe --locked
 
-cd "${harness_root}"
-uv sync --locked
-uv run pytest
-uv run ruff format --check shim
-uv run ruff check shim
-uv run pyright --pythonpath .venv/bin/python shim
-cargo fmt --all -- --check
-ANNOTATION_PROBE="${probe_path}" cargo test --all-targets --locked
-cargo clippy --all-targets --locked -- -D warnings
-cargo build --release --locked
+ANNOTATION_PROBE="${probe_path}" "${script_directory}/check-quality.sh"

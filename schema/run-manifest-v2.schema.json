@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frames-sg.example/schemas/run-manifest-v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "created_at", "metadata", "provenance", "environment", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "run_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "metadata": {"type": "object"},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "repositories", "build", "study", "ci"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "repositories": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["harness", "annotation_probe"],
+          "properties": {
+            "harness": {"$ref": "#/$defs/gitIdentity"},
+            "annotation_probe": {"$ref": "#/$defs/gitIdentity"}
+          }
+        },
+        "build": {"$ref": "#/$defs/build"},
+        "study": {"$ref": "#/$defs/study"},
+        "ci": {"$ref": "#/$defs/ci"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "os", "architecture"],
+      "properties": {
+        "harness": {"type": "string"},
+        "os": {"type": "string"},
+        "architecture": {"type": "string"}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "gitIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha", "dirty_tree", "branch", "executable_sha256", "unknown_reason"],
+      "properties": {
+        "sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "dirty_tree": {"type": ["boolean", "null"]},
+        "branch": {"$ref": "#/$defs/nullableString"},
+        "executable_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "unknown_reason": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rustc_vv", "cargo_version", "target_triple", "build_profile", "rustflags", "cargo_features", "cargo_lock_sha256", "executable_sha256", "python_version", "uv_version", "uv_lock_sha256", "python_packages", "python_packages_unknown_reason", "operating_system", "architecture"],
+      "properties": {
+        "rustc_vv": {"$ref": "#/$defs/nullableString"},
+        "cargo_version": {"$ref": "#/$defs/nullableString"},
+        "target_triple": {"$ref": "#/$defs/nullableString"},
+        "build_profile": {"enum": ["debug", "release"]},
+        "rustflags": {"$ref": "#/$defs/nullableString"},
+        "cargo_features": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "cargo_lock_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "executable_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "python_version": {"$ref": "#/$defs/nullableString"},
+        "uv_version": {"$ref": "#/$defs/nullableString"},
+        "uv_lock_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "python_packages": {"type": "object", "additionalProperties": {"type": "string"}},
+        "python_packages_unknown_reason": {"$ref": "#/$defs/nullableString"},
+        "operating_system": {"type": "string"},
+        "architecture": {"type": "string"}
+      }
+    },
+    "study": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "dicom_edition", "matrix_schema_version", "probe_schema_version", "conversion_schema_version", "process_sample_interval_ms", "process_stdout_limit_bytes", "process_stderr_limit_bytes", "metric_max_crop_pixels", "stow_response_limit_bytes", "qido_response_limit_bytes", "wado_response_limit_bytes", "profile_definition_version", "validator_provenance_artifact", "orthanc_provenance_artifact"],
+      "properties": {
+        "profile": {"type": ["string", "null"]},
+        "dicom_edition": {"type": ["string", "null"]},
+        "matrix_schema_version": {"const": 2},
+        "probe_schema_version": {"const": 1},
+        "conversion_schema_version": {"const": 1},
+        "process_sample_interval_ms": {"type": "integer", "minimum": 1},
+        "process_stdout_limit_bytes": {"type": "integer", "minimum": 1},
+        "process_stderr_limit_bytes": {"type": "integer", "minimum": 1},
+        "metric_max_crop_pixels": {"type": "integer", "minimum": 1},
+        "stow_response_limit_bytes": {"type": "integer", "minimum": 1},
+        "qido_response_limit_bytes": {"type": "integer", "minimum": 1},
+        "wado_response_limit_bytes": {"type": "integer", "minimum": 1},
+        "profile_definition_version": {"type": "integer", "minimum": 1},
+        "validator_provenance_artifact": {"const": "observations.jsonl"},
+        "orthanc_provenance_artifact": {"const": "observations.jsonl"}
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "run_attempt", "runner_name", "runner_environment"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/nullableString"},
+        "run_attempt": {"$ref": "#/$defs/nullableString"},
+        "runner_name": {"$ref": "#/$defs/nullableString"},
+        "runner_environment": {"$ref": "#/$defs/nullableString"}
+      }
+    }
+  }
+}

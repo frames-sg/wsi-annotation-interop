@@ -1,16 +1,36 @@
+use std::ffi::OsString;
 use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::process::{ProcessError, run};
+use crate::process::{CommandSpec, ProcessError, ProcessOutput, run};
 use crate::schema::{validate_conversion_report, validate_probe_report};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PayloadMode {
     Full,
     Digest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeOperation {
+    Inspect,
+    Roundtrip,
+    ConvertGeoJson,
+    ConvertRaster,
+}
+
+impl ProbeOperation {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Inspect => "inspect",
+            Self::Roundtrip => "roundtrip",
+            Self::ConvertGeoJson => "convert-geojson",
+            Self::ConvertRaster => "convert-raster",
+        }
+    }
 }
 
 impl PayloadMode {
@@ -70,6 +90,11 @@ pub struct ProbeObservation {
     pub stderr: String,
     pub elapsed_ms: f64,
     pub peak_rss_bytes: u64,
+    pub rss_sampled: bool,
+    pub sample_interval_ms: Option<u64>,
+    pub stdout_total_bytes: u64,
+    pub stderr_total_bytes: u64,
+    pub stderr_truncated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +104,17 @@ pub struct ProbeError {
     pub stderr: String,
     pub returncode: Option<i32>,
     pub peak_rss_bytes: Option<u64>,
+    pub process: Option<Box<ProbeProcessEvidence>>,
+    pub command: Option<Box<Vec<String>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProbeProcessEvidence {
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+    pub stdout_total_bytes: u64,
+    pub stderr_total_bytes: u64,
+    pub sample_interval_ms: Option<u64>,
 }
 
 impl fmt::Display for ProbeError {
@@ -89,9 +125,16 @@ impl fmt::Display for ProbeError {
 
 impl std::error::Error for ProbeError {}
 
+impl ProbeError {
+    fn with_command(mut self, command: &[String]) -> Self {
+        self.command = Some(Box::new(command.to_vec()));
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ViewerProbe {
-    executable: Vec<String>,
+    executable: CommandSpec,
     timeout: Duration,
 }
 
@@ -102,9 +145,25 @@ impl ViewerProbe {
     ///
     /// Returns an error for an empty command or a zero timeout.
     pub fn new(executable: Vec<String>, timeout: Option<Duration>) -> Result<Self, String> {
-        if executable.is_empty() {
-            return Err("annotation_probe command must not be empty".to_owned());
-        }
+        let executable = CommandSpec::from_strings(executable, "annotation_probe")?;
+        Self::from_spec(executable, timeout)
+    }
+
+    /// Construct a viewer adapter without converting the program or fixed arguments to UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty program or a zero timeout.
+    pub fn from_program(
+        program: impl Into<OsString>,
+        arguments: Vec<OsString>,
+        timeout: Option<Duration>,
+    ) -> Result<Self, String> {
+        let executable = CommandSpec::new(program.into(), arguments)?;
+        Self::from_spec(executable, timeout)
+    }
+
+    fn from_spec(executable: CommandSpec, timeout: Option<Duration>) -> Result<Self, String> {
         let timeout = timeout.unwrap_or(Duration::from_mins(10));
         if timeout.is_zero() {
             return Err("timeout must be positive".to_owned());
@@ -113,6 +172,11 @@ impl ViewerProbe {
             executable,
             timeout,
         })
+    }
+
+    #[must_use]
+    pub fn program(&self) -> &Path {
+        Path::new(self.executable.program())
     }
 
     /// Inspect one ANN or SEG object through the public probe contract.
@@ -128,18 +192,18 @@ impl ViewerProbe {
         payload: PayloadMode,
     ) -> Result<ProbeObservation, ProbeError> {
         let mut command = self.executable.clone();
-        command.extend(["inspect".to_owned(), "--source".to_owned()]);
-        command.push(source.to_string_lossy().into_owned());
+        command.extend(["inspect", "--source"]);
+        command.push(source.as_os_str());
         if let Some(canonical_source) = canonical_source {
-            command.push("--canonical-source".to_owned());
-            command.push(canonical_source.to_string_lossy().into_owned());
+            command.push("--canonical-source");
+            command.push(canonical_source.as_os_str());
         }
         command.extend([
-            "--payload".to_owned(),
-            payload.label().to_owned(),
-            annotation.to_string_lossy().into_owned(),
+            OsString::from("--payload"),
+            OsString::from(payload.label()),
+            annotation.as_os_str().to_owned(),
         ]);
-        self.execute(command, "inspect", validate_probe_report)
+        self.execute(&command, ProbeOperation::Inspect, validate_probe_report)
     }
 
     /// Rewrite one ANN or SEG object through the public probe contract.
@@ -157,23 +221,23 @@ impl ViewerProbe {
         allow_lossy: bool,
     ) -> Result<ProbeObservation, ProbeError> {
         let mut command = self.executable.clone();
-        command.extend(["roundtrip".to_owned(), "--source".to_owned()]);
-        command.push(source.to_string_lossy().into_owned());
-        command.push("--output".to_owned());
-        command.push(output.to_string_lossy().into_owned());
+        command.extend(["roundtrip", "--source"]);
+        command.push(source.as_os_str());
+        command.push("--output");
+        command.push(output.as_os_str());
         if let Some(canonical_source) = canonical_source {
-            command.push("--canonical-source".to_owned());
-            command.push(canonical_source.to_string_lossy().into_owned());
+            command.push("--canonical-source");
+            command.push(canonical_source.as_os_str());
         }
         if allow_lossy {
-            command.push("--allow-lossy".to_owned());
+            command.push("--allow-lossy");
         }
         command.extend([
-            "--payload".to_owned(),
-            payload.label().to_owned(),
-            annotation.to_string_lossy().into_owned(),
+            OsString::from("--payload"),
+            OsString::from(payload.label()),
+            annotation.as_os_str().to_owned(),
         ]);
-        self.execute(command, "roundtrip", validate_probe_report)
+        self.execute(&command, ProbeOperation::Roundtrip, validate_probe_report)
     }
 
     /// Convert profiled `GeoJSON` into a deterministic multi-object bundle.
@@ -200,31 +264,38 @@ impl ViewerProbe {
         }
         let mut command = self.executable.clone();
         command.extend([
-            "convert-geojson".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
+            OsString::from("convert-geojson"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
         ]);
         if let Some(canonical_source) = canonical_source {
-            command.extend(["--canonical-source".to_owned(), path_text(canonical_source)]);
+            command.extend([
+                OsString::from("--canonical-source"),
+                canonical_source.as_os_str().to_owned(),
+            ]);
         }
         command.extend([
-            "--mapping".to_owned(),
-            path_text(mapping),
-            "--coordinate-space".to_owned(),
-            coordinate_space.label().to_owned(),
+            OsString::from("--mapping"),
+            mapping.as_os_str().to_owned(),
+            OsString::from("--coordinate-space"),
+            OsString::from(coordinate_space.label()),
         ]);
         for target in targets {
-            command.extend(["--target".to_owned(), target.label().to_owned()]);
+            command.extend(["--target", target.label()]);
         }
         if allow_lossy {
-            command.push("--allow-lossy".to_owned());
+            command.push("--allow-lossy");
         }
         command.extend([
-            "--output-dir".to_owned(),
-            path_text(output_directory),
-            path_text(geojson),
+            OsString::from("--output-dir"),
+            output_directory.as_os_str().to_owned(),
+            geojson.as_os_str().to_owned(),
         ]);
-        self.execute(command, "convert-geojson", validate_conversion_report)
+        self.execute(
+            &command,
+            ProbeOperation::ConvertGeoJson,
+            validate_conversion_report,
+        )
     }
 
     /// Convert a profiled raster into a Parametric Map bundle.
@@ -245,64 +316,96 @@ impl ViewerProbe {
     ) -> Result<ProbeObservation, ProbeError> {
         let mut command = self.executable.clone();
         command.extend([
-            "convert-raster".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
+            OsString::from("convert-raster"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
         ]);
         if let Some(canonical_source) = canonical_source {
-            command.extend(["--canonical-source".to_owned(), path_text(canonical_source)]);
+            command.extend([
+                OsString::from("--canonical-source"),
+                canonical_source.as_os_str().to_owned(),
+            ]);
         }
-        command.extend(["--profile".to_owned(), path_text(profile)]);
+        command.extend([OsString::from("--profile"), profile.as_os_str().to_owned()]);
         match channels {
             RasterChannels::Auto => {}
-            RasterChannels::One(value) => command.extend(["--channel".to_owned(), value]),
-            RasterChannels::All => command.push("--all-channels".to_owned()),
+            RasterChannels::One(value) => {
+                command.extend([OsString::from("--channel"), OsString::from(value)]);
+            }
+            RasterChannels::All => command.push("--all-channels"),
         }
         if let Some(maximum) = maximum_instance_bytes {
-            command.extend(["--max-instance-bytes".to_owned(), maximum.to_string()]);
+            command.extend([
+                OsString::from("--max-instance-bytes"),
+                OsString::from(maximum.to_string()),
+            ]);
         }
         command.extend([
-            "--output-dir".to_owned(),
-            path_text(output_directory),
-            path_text(raster),
+            OsString::from("--output-dir"),
+            output_directory.as_os_str().to_owned(),
+            raster.as_os_str().to_owned(),
         ]);
-        self.execute(command, "convert-raster", validate_conversion_report)
+        self.execute(
+            &command,
+            ProbeOperation::ConvertRaster,
+            validate_conversion_report,
+        )
     }
 
     fn execute(
         &self,
-        command: Vec<String>,
-        expected_operation: &str,
+        command: &CommandSpec,
+        expected_operation: ProbeOperation,
         validate: fn(&Value) -> Result<(), String>,
     ) -> Result<ProbeObservation, ProbeError> {
-        let output = run(&command, self.timeout).map_err(process_error)?;
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        let report: Value = serde_json::from_slice(&output.stdout).map_err(|error| ProbeError {
-            message: format!("annotation_probe emitted invalid JSON: {error}"),
-            report: None,
-            stderr: stderr.clone(),
-            returncode: output.status.code(),
-            peak_rss_bytes: Some(output.peak_rss_bytes),
+        let display_command = command.display();
+        let output = run(&command.process_spec(self.timeout))
+            .map_err(|error| process_error(error).with_command(&display_command))?;
+        let stderr = String::from_utf8_lossy(&output.stderr.bytes).into_owned();
+        if output.stdout.truncated {
+            return Err(observed_error(
+                format!(
+                    "annotation_probe report exceeded the {} byte stdout limit ({} bytes observed)",
+                    output.stdout.bytes.len(),
+                    output.stdout.total_bytes
+                ),
+                None,
+                stderr,
+                &output,
+                &display_command,
+            ));
+        }
+        let report: Value = serde_json::from_slice(&output.stdout.bytes).map_err(|error| {
+            observed_error(
+                format!("annotation_probe emitted invalid JSON: {error}"),
+                None,
+                stderr.clone(),
+                &output,
+                &display_command,
+            )
         })?;
-        validate(&report).map_err(|message| ProbeError {
-            message,
-            report: Some(report.clone()),
-            stderr: stderr.clone(),
-            returncode: output.status.code(),
-            peak_rss_bytes: Some(output.peak_rss_bytes),
+        validate(&report).map_err(|message| {
+            observed_error(
+                message,
+                Some(report.clone()),
+                stderr.clone(),
+                &output,
+                &display_command,
+            )
         })?;
         let operation = report.get("operation").and_then(Value::as_str);
-        if operation != Some(expected_operation) {
-            return Err(ProbeError {
-                message: format!(
-                    "annotation_probe reported operation {} for requested {expected_operation}",
-                    operation.unwrap_or("<missing>")
+        if operation != Some(expected_operation.label()) {
+            return Err(observed_error(
+                format!(
+                    "annotation_probe reported operation {} for requested {}",
+                    operation.unwrap_or("<missing>"),
+                    expected_operation.label()
                 ),
-                report: Some(report),
+                Some(report),
                 stderr,
-                returncode: output.status.code(),
-                peak_rss_bytes: Some(output.peak_rss_bytes),
-            });
+                &output,
+                &display_command,
+            ));
         }
         if !output.status.success() || report.get("status").and_then(Value::as_str) != Some("ok") {
             let message = report
@@ -312,26 +415,29 @@ impl ViewerProbe {
                     || format!("annotation_probe exited with status {}", output.status),
                     str::to_owned,
                 );
-            return Err(ProbeError {
+            return Err(observed_error(
                 message,
-                report: Some(report),
+                Some(report),
                 stderr,
-                returncode: output.status.code(),
-                peak_rss_bytes: Some(output.peak_rss_bytes),
-            });
+                &output,
+                &display_command,
+            ));
         }
         Ok(ProbeObservation {
-            command,
+            command: display_command,
             report,
             stderr,
             elapsed_ms: output.elapsed.as_secs_f64() * 1000.0,
             peak_rss_bytes: output.peak_rss_bytes,
+            rss_sampled: output.rss_sampled,
+            sample_interval_ms: output
+                .sample_interval
+                .and_then(|interval| u64::try_from(interval.as_millis()).ok()),
+            stdout_total_bytes: output.stdout.total_bytes,
+            stderr_total_bytes: output.stderr.total_bytes,
+            stderr_truncated: output.stderr.truncated,
         })
     }
-}
-
-fn path_text(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
 }
 
 fn configuration_error(message: &str) -> ProbeError {
@@ -341,25 +447,60 @@ fn configuration_error(message: &str) -> ProbeError {
         stderr: String::new(),
         returncode: None,
         peak_rss_bytes: None,
+        process: None,
+        command: None,
+    }
+}
+
+fn observed_error(
+    message: String,
+    report: Option<Value>,
+    stderr: String,
+    output: &ProcessOutput,
+    command: &[String],
+) -> ProbeError {
+    ProbeError {
+        message,
+        report,
+        stderr,
+        returncode: output.status.code(),
+        peak_rss_bytes: output.rss_sampled.then_some(output.peak_rss_bytes),
+        process: Some(Box::new(ProbeProcessEvidence {
+            stdout_truncated: output.stdout.truncated,
+            stderr_truncated: output.stderr.truncated,
+            stdout_total_bytes: output.stdout.total_bytes,
+            stderr_total_bytes: output.stderr.total_bytes,
+            sample_interval_ms: output
+                .sample_interval
+                .and_then(|interval| u64::try_from(interval.as_millis()).ok()),
+        })),
+        command: Some(Box::new(command.to_vec())),
     }
 }
 
 fn process_error(error: ProcessError) -> ProbeError {
     match error {
-        ProcessError::TimedOut {
-            timeout,
-            stdout,
-            stderr,
-            peak_rss_bytes,
-        } => ProbeError {
+        ProcessError::TimedOut { timeout, output } => ProbeError {
             message: format!(
                 "annotation_probe timed out after {} seconds",
                 timeout.as_secs_f64()
             ),
-            report: serde_json::from_slice(&stdout).ok(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            report: (!output.stdout.truncated)
+                .then(|| serde_json::from_slice(&output.stdout.bytes).ok())
+                .flatten(),
+            stderr: String::from_utf8_lossy(&output.stderr.bytes).into_owned(),
             returncode: None,
-            peak_rss_bytes: Some(peak_rss_bytes),
+            peak_rss_bytes: output.rss_sampled.then_some(output.peak_rss_bytes),
+            process: Some(Box::new(ProbeProcessEvidence {
+                stdout_truncated: output.stdout.truncated,
+                stderr_truncated: output.stderr.truncated,
+                stdout_total_bytes: output.stdout.total_bytes,
+                stderr_total_bytes: output.stderr.total_bytes,
+                sample_interval_ms: output
+                    .sample_interval
+                    .and_then(|interval| u64::try_from(interval.as_millis()).ok()),
+            })),
+            command: None,
         },
         error => ProbeError {
             message: format!("annotation_probe execution failed: {error}"),
@@ -367,6 +508,8 @@ fn process_error(error: ProcessError) -> ProbeError {
             stderr: String::new(),
             returncode: None,
             peak_rss_bytes: None,
+            process: None,
+            command: None,
         },
     }
 }

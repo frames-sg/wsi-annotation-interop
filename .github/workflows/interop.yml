@@ -71,6 +71,39 @@ jobs:
           DICOM_VIEWER_ROOT: ${{ github.workspace }}/dicom-viewer
         run: ./scripts/check-core.sh
 
+      - name: Publish core-profile run directory
+        if: always()
+        working-directory: wsi-annotation-interop
+        env:
+          ANNOTATION_PROBE: ${{ github.workspace }}/dicom-viewer/target/debug/annotation_probe
+          RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-core
+        run: |
+          set +e
+          target/release/wsi-annotation-interop run-core \
+            --probe "${ANNOTATION_PROBE}" \
+            --results results \
+            --run-id "${RUN_ID}"
+          profile_status=$?
+          set -e
+          if [[ -d "results/${RUN_ID}" ]]; then
+            tar -czf "results/${RUN_ID}.tar.gz" -C results "${RUN_ID}"
+            sha256sum "results/${RUN_ID}.tar.gz" > "results/${RUN_ID}.tar.gz.sha256"
+            sha256sum "results/${RUN_ID}/manifest.json" > "results/${RUN_ID}.manifest.sha256"
+          fi
+          exit "${profile_status}"
+
+      - name: Upload core-profile results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wsi-annotation-interop-core-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            wsi-annotation-interop/results/github-${{ github.run_id }}-${{ github.run_attempt }}-core/
+            wsi-annotation-interop/results/github-${{ github.run_id }}-${{ github.run_attempt }}-core.tar.gz
+            wsi-annotation-interop/results/github-${{ github.run_id }}-${{ github.run_attempt }}-core.tar.gz.sha256
+            wsi-annotation-interop/results/github-${{ github.run_id }}-${{ github.run_attempt }}-core.manifest.sha256
+          if-no-files-found: error
+
   full:
     if: github.event_name == 'workflow_dispatch' && inputs.run_full
     needs: core
@@ -97,26 +130,25 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
-      - name: Build probe and synchronize full environment
-        run: |
-          cargo build --manifest-path dicom-viewer/Cargo.toml \
-            -p dicom-viewer --bin annotation_probe --release --locked
-          uv sync --project wsi-annotation-interop --locked --extra pydcm
-          cargo build --manifest-path wsi-annotation-interop/Cargo.toml --release --locked
-
-      - name: Run explicit full profile
+      - name: Run explicit full gate
+        working-directory: wsi-annotation-interop
         env:
+          DICOM_VIEWER_ROOT: ${{ github.workspace }}/dicom-viewer
           ORTHANC_EXECUTABLE: ${{ inputs.orthanc_executable }}
+          RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
+        run: ./scripts/check-full.sh
+
+      - name: Hash full-profile bundle
+        if: always()
+        working-directory: wsi-annotation-interop
+        env:
+          RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          orthanc_args=()
-          if [[ -n "${ORTHANC_EXECUTABLE}" ]]; then
-            orthanc_args=(--orthanc "${ORTHANC_EXECUTABLE}")
+          if [[ -d "results/${RUN_ID}" ]]; then
+            tar -czf "results/${RUN_ID}.tar.gz" -C results "${RUN_ID}"
+            sha256sum "results/${RUN_ID}.tar.gz" > "results/${RUN_ID}.tar.gz.sha256"
+            sha256sum "results/${RUN_ID}/manifest.json" > "results/${RUN_ID}.manifest.sha256"
           fi
-          wsi-annotation-interop/target/release/wsi-annotation-interop run-full \
-            --probe "${{ github.workspace }}/dicom-viewer/target/release/annotation_probe" \
-            --results wsi-annotation-interop/results \
-            --run-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
-            "${orthanc_args[@]}"
 
       - name: Upload full-profile results
         if: always()

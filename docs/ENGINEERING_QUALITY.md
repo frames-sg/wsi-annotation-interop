@@ -1,19 +1,7 @@
-# Engineering quality and anti-slop gates
+# Engineering quality gates
 
-These rules prevent maintainability defects in this repository and in the
-sibling Rust converter. They are review heuristics, not an authorship detector:
-none of the signals below proves that code was written by AI.
-
-The policy is grounded in three current empirical warnings. A 2026 controlled
-study found no systematic downstream maintainability advantage or disadvantage
-overall; its first phase nevertheless observed more new duplication, nested
-complexity, and complex conditionals in the AI-assisted group
-([Borg et al.](https://link.springer.com/article/10.1007/s10664-026-10889-1)).
-A study of coding-agent commits found mocks in 36% of agent commits versus 26%
-of non-agent commits
-([Hora and Robbes](https://arxiv.org/abs/2602.00409)). Package hallucinations can
-also turn invented dependency names into a supply-chain attack surface
-([Krishna et al.](https://derczynski.com/papers/importing_phantoms.pdf)).
+These rules define the checks this repository actually runs. Structural items are review
+heuristics; executable gates and manual full-profile requirements are identified separately.
 
 ## Before writing code
 
@@ -75,22 +63,36 @@ also turn invented dependency names into a supply-chain attack surface
 - Do not weaken assertions, delete passing tests, or update snapshots without
   separately reviewed ground truth.
 
-## Checkpoint gate
+## Executable gates
 
-At every implementation checkpoint:
+`./scripts/check-quality.sh` is the repository-only quality gate. It runs, in order:
 
-1. Run the focused red-green-refactor cycle and applicable full checks.
-2. Review correctness, security, compatibility, scientific meaning, the full
-   diff, and status of both repositories.
-3. Run `ponytail-review`, whose output is one deletion-oriented finding per
-   line in the form `file:Lline: tag — cut; replace with simpler alternative`.
-4. Resolve every valid finding outside the review and rerun all invalidated
-   checks.
-5. Close the checkpoint only when the final review output is exactly
-   `Lean already. Ship.`. Any later code change invalidates that pass.
+- `uv sync --locked` (or `--extra "$UV_SYNC_EXTRA"` when explicitly selected);
+- pytest, Ruff formatting, Ruff lint, and Pyright for the independent shim;
+- Rustfmt;
+- all Rust targets and schema/example integration tests;
+- Clippy with warnings denied;
+- a locked release build.
 
-The final gate also runs formatting, Clippy, all tests, feature checks, release
-builds, dependency pruning/audit/license checks, the cross-repository core
-harness, DICOM validators, the full profile, and local Orthanc transport when
-the executable is available. A missing tool is reported as an unverified gate,
-never converted into a pass.
+`./scripts/check-core.sh` first builds and tests the sibling `annotation_probe`, then invokes the
+quality gate with its exact path. The sibling is mandatory for this gate; absence or a contract
+failure fails the command.
+
+`./scripts/check-full.sh` is the explicit manual/full-runner gate. It requires `pydcm`, all four
+validators, an executable `ORTHANC_EXECUTABLE`, and the sibling viewer. It runs the core gate,
+builds the release probe, executes the full profile, and publishes only the transactional run. A
+missing required component exits nonzero and is not a pass.
+
+CI runs the core gate on pushes and pull requests. The full gate runs only on the labeled
+self-hosted workflow-dispatch runner. Both profile jobs retain complete run artifacts and hashes.
+
+## Review and manual checks
+
+At a checkpoint, run the narrow red-green cycle, the applicable executable gate, and inspect the
+complete diff and status. Review correctness, security, compatibility, scientific meaning,
+cohesion, dependency cost, and benchmark limitations. No named prose-review tool or magic output
+phrase is a gate unless it is installed and invoked by a script or workflow.
+
+Dependency advisories, licenses, unused dependencies, cross-target builds, sanitizers, and Miri are
+manual checks unless a future pinned tool is added to the executable scripts. Do not claim they
+passed based on this policy alone. Orthanc is unavailable—not passed—outside the full gate.

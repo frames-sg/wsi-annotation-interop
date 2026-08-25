@@ -383,7 +383,7 @@ fn binary_runs() -> Vec<MaskRun> {
     planes
         .iter()
         .enumerate()
-        .flat_map(|(index, plane)| plane_runs(plane, u16::try_from(index + 1).unwrap()))
+        .flat_map(|(index, plane)| plane_runs(plane, small_u16(index + 1)))
         .collect()
 }
 
@@ -417,8 +417,8 @@ fn fractional_runs() -> Vec<MaskRun> {
             }
             runs.push(MaskRun::Fractional {
                 segment_number: 1,
-                row: u32::try_from(row).unwrap(),
-                column_start: u32::try_from(start).unwrap(),
+                row: small_u32(row),
+                column_start: small_u32(start),
                 maximum_fractional_value: 255,
                 values: values[start..column].to_vec(),
             });
@@ -442,9 +442,9 @@ fn plane_runs(plane: &[[bool; 16]; 16], segment_number: u16) -> Vec<MaskRun> {
             }
             runs.push(MaskRun::Binary {
                 segment_number,
-                row: u32::try_from(row).unwrap(),
-                column_start: u32::try_from(start).unwrap(),
-                length: u32::try_from(column - start).unwrap(),
+                row: small_u32(row),
+                column_start: small_u32(start),
+                length: small_u32(column - start),
             });
         }
     }
@@ -481,7 +481,7 @@ fn mask_digest(kind: MaskKind, runs: &[MaskRun]) -> String {
                 digest.update(row.to_le_bytes());
                 digest.update(column_start.to_le_bytes());
                 digest.update(maximum_fractional_value.to_le_bytes());
-                digest.update(u32::try_from(values.len()).unwrap().to_le_bytes());
+                digest.update(small_u32(values.len()).to_le_bytes());
                 for value in values {
                     digest.update(value.to_le_bytes());
                 }
@@ -489,6 +489,21 @@ fn mask_digest(kind: MaskKind, runs: &[MaskRun]) -> String {
         }
     }
     format!("{:x}", digest.finalize())
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn small_u32(value: usize) -> u32 {
+    debug_assert!(
+        u32::try_from(value).is_ok(),
+        "fixture coordinate exceeds u32"
+    );
+    value as u32
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn small_u16(value: usize) -> u16 {
+    debug_assert!(u16::try_from(value).is_ok(), "fixture segment exceeds u16");
+    value as u16
 }
 
 fn fill<T: Copy>(

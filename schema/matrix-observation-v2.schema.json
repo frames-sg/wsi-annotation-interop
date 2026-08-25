@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/wsi-annotation-interop/matrix-observation-v2.schema.json",
+  "title": "WSI annotation matrix observation version 2",
+  "type": "object",
+  "required": [
+    "schema_version", "case_id", "pyramid_level", "status", "phases",
+    "inspect_equal", "roundtrip_equal", "rewrite_rejected", "highdicom_readable",
+    "coordinate_error_max_px", "coordinate_error_median_px", "coordinate_error_rms_px",
+    "dice", "mask_metrics", "runtime_ms", "peak_rss_bytes", "viewer_runtime",
+    "peak_tracked_heap_bytes", "viewer_implementation", "probe_commands", "input_bytes",
+    "output_bytes", "input_sop_instance_uid", "output_sop_instance_uid", "message"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "case_id": {"type": "string", "minLength": 1},
+    "pyramid_level": {"type": "integer", "minimum": 0},
+    "status": {"$ref": "#/$defs/status"},
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/phaseObservation"}
+    },
+    "inspect_equal": {"type": "boolean"},
+    "roundtrip_equal": {"type": ["boolean", "null"]},
+    "rewrite_rejected": {"type": "boolean"},
+    "highdicom_readable": {"type": "boolean"},
+    "coordinate_error_max_px": {"$ref": "#/$defs/nullableNumber"},
+    "coordinate_error_median_px": {"$ref": "#/$defs/nullableNumber"},
+    "coordinate_error_rms_px": {"$ref": "#/$defs/nullableNumber"},
+    "dice": {"$ref": "#/$defs/nullableNumber"},
+    "mask_metrics": {"type": ["object", "null"]},
+    "runtime_ms": {"type": "number", "minimum": 0},
+    "peak_rss_bytes": {"type": "integer", "minimum": 0},
+    "viewer_runtime": {"type": "object"},
+    "peak_tracked_heap_bytes": {"type": "integer", "minimum": 0},
+    "viewer_implementation": {"type": "object"},
+    "probe_commands": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"type": "string"}}
+    },
+    "input_bytes": {"type": "integer", "minimum": 0},
+    "output_bytes": {"type": ["integer", "null"], "minimum": 0},
+    "input_sop_instance_uid": {"type": "string"},
+    "output_sop_instance_uid": {"type": ["string", "null"]},
+    "message": {"type": "string"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nullableNumber": {"type": ["number", "null"]},
+    "status": {
+      "enum": [
+        "passed", "failed", "rejected_as_expected", "unavailable", "timed_out",
+        "resource_limited", "not_run"
+      ]
+    },
+    "phase": {
+      "enum": [
+        "reference_input_normalization", "reference_input_comparison", "viewer_inspection",
+        "inspect_comparison", "rewrite_request", "rewrite_response",
+        "reference_output_normalization", "reference_output_comparison", "output_comparison",
+        "identity_verification", "mask_metrics", "artifact_verification"
+      ]
+    },
+    "phaseObservation": {
+      "type": "object",
+      "required": ["phase", "status", "message", "artifacts"],
+      "properties": {
+        "phase": {"$ref": "#/$defs/phase"},
+        "status": {"$ref": "#/$defs/status"},
+        "command": {"type": "array", "items": {"type": "string"}},
+        "elapsed_ms": {"type": "number", "minimum": 0},
+        "peak_rss_bytes": {"type": "integer", "minimum": 0},
+        "output_truncated": {"type": "boolean"},
+        "error_code": {"type": "string", "minLength": 1},
+        "message": {"type": "string"},
+        "artifacts": {"type": "array", "items": {"type": "string"}},
+        "details": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

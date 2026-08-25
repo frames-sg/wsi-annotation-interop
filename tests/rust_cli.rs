@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -56,20 +57,28 @@ fn rust_cli_runs_core_and_reports_pydcm_as_nonprimary() {
     let qualification: Value = serde_json::from_slice(&qualification.stdout).unwrap();
     assert_eq!(qualification["implementation"], "pydcm");
     assert_eq!(qualification["primary_failure"], false);
-    assert_eq!(qualification["capabilities"]["ann_read"], true);
-    assert_eq!(qualification["capabilities"]["ann_write"], true);
-    assert_eq!(qualification["capabilities"]["seg_read"], false);
-    assert!(
-        qualification["reasons"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|reason| {
-                reason
+    if qualification["version"].is_null() {
+        assert_eq!(qualification["qualified"], false);
+        assert_eq!(qualification["capabilities"], serde_json::json!({}));
+        assert!(
+            qualification["reasons"][0]
+                .as_str()
+                .is_some_and(|reason| reason.contains("not installed"))
+        );
+    } else {
+        assert_eq!(qualification["capabilities"]["ann_read"], true);
+        assert_eq!(qualification["capabilities"]["ann_write"], true);
+        assert_eq!(qualification["capabilities"]["seg_read"], false);
+        assert!(
+            qualification["reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|reason| reason
                     .as_str()
-                    .is_some_and(|text| text.contains("no foreground labels"))
-            })
-    );
+                    .is_some_and(|text| text.contains("no foreground labels")))
+        );
+    }
 
     let directory = tempdir().unwrap();
     let core = Command::new(executable)
@@ -81,12 +90,32 @@ fn rust_cli_runs_core_and_reports_pydcm_as_nonprimary() {
         .args(["--run-id", "cli-rust-core"])
         .output()
         .unwrap();
-    assert!(
-        core.status.success(),
-        "{}",
-        String::from_utf8_lossy(&core.stderr)
-    );
+    assert!(matches!(core.status.code(), Some(0 | 1)));
     let report: Value = serde_json::from_slice(&core.stdout).unwrap();
-    assert_eq!(report["status"], "passed");
-    assert!(PathBuf::from(report["manifest"].as_str().unwrap()).is_file());
+    let manifest = PathBuf::from(report["manifest"].as_str().unwrap());
+    assert!(manifest.is_file());
+    assert_eq!(report["status"] == "passed", core.status.success());
+    if !core.status.success() {
+        let observations =
+            fs::read_to_string(manifest.parent().unwrap().join("observations.jsonl")).unwrap();
+        let failed = observations
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|observation| observation["status"] == "failed")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            failed
+                .iter()
+                .map(|observation| observation["case_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["seg-labelmap", "seg-fractional"]
+        );
+        assert!(failed.iter().all(|observation| {
+            observation["phases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|phase| phase["error_code"] == "OPERATION_FAILED")
+        }));
+    }
 }

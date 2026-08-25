@@ -7,9 +7,9 @@ use serde::Serialize;
 use serde_json::json;
 use tempfile::TempDir;
 use wsi_annotation_interop::probe::ViewerProbe;
-use wsi_annotation_interop::profiles::{run_core_profile, run_full_profile};
 use wsi_annotation_interop::shim::ReferenceShim;
-use wsi_annotation_interop::validators::run_standard_validators;
+use wsi_annotation_interop::validators::{ValidatorStatus, run_standard_validators};
+use wsi_annotation_interop::{run_core_profile, run_full_profile};
 
 #[derive(Parser)]
 #[command(
@@ -93,15 +93,11 @@ fn main() -> ExitCode {
 }
 
 fn execute(cli: Cli) -> Result<u8, String> {
-    let reference = ReferenceShim::new(
-        vec![
-            project_path(&cli.reference_python)
-                .to_string_lossy()
-                .into_owned(),
-            project_path(&cli.reference_shim)
-                .to_string_lossy()
-                .into_owned(),
-        ],
+    let reference_python = project_path(&cli.reference_python);
+    let reference_shim = project_path(&cli.reference_shim);
+    let reference = ReferenceShim::from_program(
+        reference_python.as_os_str(),
+        vec![reference_shim.as_os_str().to_owned()],
         Duration::from_mins(10),
     )?;
     match cli.command {
@@ -151,7 +147,7 @@ fn execute(cli: Cli) -> Result<u8, String> {
                     .map_err(|error| error.to_string())?;
             let passed = observations
                 .iter()
-                .all(|observation| observation.status == "passed");
+                .all(|observation| observation.status == ValidatorStatus::Passed);
             print_json(&observations)?;
             Ok(u8::from(!passed))
         }
@@ -187,10 +183,7 @@ fn execute(cli: Cli) -> Result<u8, String> {
 }
 
 fn viewer_probe(path: &Path) -> Result<ViewerProbe, String> {
-    ViewerProbe::new(
-        vec![path.to_string_lossy().into_owned()],
-        Some(Duration::from_mins(10)),
-    )
+    ViewerProbe::from_program(path.as_os_str(), Vec::new(), Some(Duration::from_mins(10)))
 }
 
 fn project_path(path: &Path) -> PathBuf {

@@ -3,17 +3,27 @@ use std::sync::OnceLock;
 use jsonschema::Validator;
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunManifestVersion {
+    V1Legacy,
+    V2Provenance,
+}
+
 const PROBE_REPORT_SCHEMA: &str = include_str!("../schema/probe-report-v1.schema.json");
 const CONVERSION_REPORT_SCHEMA: &str = include_str!("../schema/conversion-report-v1.schema.json");
 const PATHOLOGY_MAPPING_SCHEMA: &str = include_str!("../schema/pathology-mapping-v1.schema.json");
 const RASTER_PROFILE_SCHEMA: &str = include_str!("../schema/raster-profile-v1.schema.json");
 const TILED_MANIFEST_SCHEMA: &str = include_str!("../schema/tiled-manifest-v1.schema.json");
+const MATRIX_OBSERVATION_SCHEMA: &str = include_str!("../schema/matrix-observation-v2.schema.json");
+const RUN_MANIFEST_SCHEMA: &str = include_str!("../schema/run-manifest-v2.schema.json");
 
 static PROBE_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 static CONVERSION_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 static PATHOLOGY_MAPPING_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 static RASTER_PROFILE_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 static TILED_MANIFEST_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
+static MATRIX_OBSERVATION_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
+static RUN_MANIFEST_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 
 /// Validate an `annotation_probe` report against the versioned public schema.
 ///
@@ -84,6 +94,59 @@ pub fn validate_tiled_manifest(manifest: &Value) -> Result<(), String> {
         &TILED_MANIFEST_VALIDATOR,
         "tiled manifest",
     )
+}
+
+/// Validate a version 2 matrix observation with retained phase evidence.
+///
+/// # Errors
+///
+/// Returns an error for an invalid bundled schema or a nonconforming observation.
+pub fn validate_matrix_observation(observation: &Value) -> Result<(), String> {
+    validate_document(
+        observation,
+        MATRIX_OBSERVATION_SCHEMA,
+        &MATRIX_OBSERVATION_VALIDATOR,
+        "matrix observation",
+    )
+}
+
+/// Validate the version 2 immutable-run manifest and its versioned provenance block.
+///
+/// # Errors
+///
+/// Returns an error for an invalid bundled schema or a nonconforming manifest.
+pub fn validate_run_manifest(manifest: &Value) -> Result<(), String> {
+    validate_document(
+        manifest,
+        RUN_MANIFEST_SCHEMA,
+        &RUN_MANIFEST_VALIDATOR,
+        "run manifest",
+    )
+}
+
+/// Validate a current manifest strictly or recognize the retained legacy v1 shape.
+///
+/// Legacy manifests remain readable but do not gain provenance they never recorded.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported version or malformed required legacy fields.
+pub fn validate_compatible_run_manifest(manifest: &Value) -> Result<RunManifestVersion, String> {
+    match manifest.get("schema_version").and_then(Value::as_u64) {
+        Some(2) => {
+            validate_run_manifest(manifest)?;
+            Ok(RunManifestVersion::V2Provenance)
+        }
+        Some(1)
+            if manifest.get("run_id").and_then(Value::as_str).is_some()
+                && manifest.get("metadata").is_some_and(Value::is_object)
+                && manifest.get("artifacts").is_some_and(Value::is_array) =>
+        {
+            Ok(RunManifestVersion::V1Legacy)
+        }
+        Some(version) => Err(format!("unsupported run manifest schema version {version}")),
+        None => Err("run manifest schema_version is missing or invalid".to_owned()),
+    }
 }
 
 fn validate_document(

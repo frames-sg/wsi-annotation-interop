@@ -12,12 +12,55 @@ mod geojson;
 mod inputs;
 mod parametric_map;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum ConversionMatrixKind {
+    #[serde(rename = "ann-seg")]
+    AnnSeg,
+    #[serde(rename = "sr")]
+    Sr,
+    #[serde(rename = "pm")]
+    Pm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConversionTarget {
+    Ann,
+    Seg,
+    Sr,
+    Pm,
+}
+
+impl ConversionTarget {
+    const fn matrix(self) -> ConversionMatrixKind {
+        match self {
+            Self::Ann | Self::Seg => ConversionMatrixKind::AnnSeg,
+            Self::Sr => ConversionMatrixKind::Sr,
+            Self::Pm => ConversionMatrixKind::Pm,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConversionStatus {
+    Passed,
+    Failed,
+}
+
+impl ConversionStatus {
+    #[must_use]
+    pub const fn is_passed(self) -> bool {
+        matches!(self, Self::Passed)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ConversionObservation {
-    pub matrix: String,
+    pub matrix: ConversionMatrixKind,
     pub case_id: String,
-    pub target: String,
-    pub status: String,
+    pub target: ConversionTarget,
+    pub status: ConversionStatus,
     pub highdicom_readable: bool,
     pub output_paths: Vec<PathBuf>,
     pub report: Value,
@@ -41,7 +84,7 @@ impl ConversionMatrixResult {
             && self
                 .observations
                 .iter()
-                .all(|observation| observation.status == "passed")
+                .all(|observation| observation.status.is_passed())
     }
 }
 
@@ -67,22 +110,28 @@ pub fn run_conversion_matrices(
     let mut observations = Vec::with_capacity(6);
     record(
         &mut observations,
-        &[("geojson-ann", "ann"), ("sr-direct", "sr")],
+        &[
+            ("geojson-ann", ConversionTarget::Ann),
+            ("sr-direct", ConversionTarget::Sr),
+        ],
         geojson::run_direct(fixtures, reference, probe, output_directory, &inputs),
     );
     record(
         &mut observations,
-        &[("geojson-seg", "seg"), ("sr-seg-reference", "sr")],
+        &[
+            ("geojson-seg", ConversionTarget::Seg),
+            ("sr-seg-reference", ConversionTarget::Sr),
+        ],
         geojson::run_seg_reference(fixtures, reference, probe, output_directory, &inputs),
     );
     record(
         &mut observations,
-        &[("pm-float32", "pm")],
+        &[("pm-float32", ConversionTarget::Pm)],
         parametric_map::run_single(fixtures, reference, probe, output_directory, &inputs),
     );
     record(
         &mut observations,
-        &[("pm-concatenation", "pm")],
+        &[("pm-concatenation", ConversionTarget::Pm)],
         parametric_map::run_concatenation(fixtures, reference, probe, output_directory, &inputs),
     );
     Ok(ConversionMatrixResult { observations })
@@ -90,7 +139,7 @@ pub fn run_conversion_matrices(
 
 fn record(
     observations: &mut Vec<ConversionObservation>,
-    expected: &[(&str, &str)],
+    expected: &[(&str, ConversionTarget)],
     result: Result<Vec<ConversionObservation>, String>,
 ) {
     match result {
@@ -100,10 +149,10 @@ fn record(
                 expected
                     .iter()
                     .map(|(case_id, target)| ConversionObservation {
-                        matrix: matrix_name(target).to_owned(),
+                        matrix: target.matrix(),
                         case_id: (*case_id).to_owned(),
-                        target: (*target).to_owned(),
-                        status: "failed".to_owned(),
+                        target: *target,
+                        status: ConversionStatus::Failed,
                         highdicom_readable: false,
                         output_paths: Vec::new(),
                         report: json!({}),
@@ -120,18 +169,17 @@ fn record(
 }
 
 pub(super) fn passed(
-    matrix: &str,
     case_id: &str,
-    target: &str,
+    target: ConversionTarget,
     observation: &ProbeObservation,
     output_paths: Vec<PathBuf>,
     normalized: Value,
 ) -> ConversionObservation {
     ConversionObservation {
-        matrix: matrix.to_owned(),
+        matrix: target.matrix(),
         case_id: case_id.to_owned(),
-        target: target.to_owned(),
-        status: "passed".to_owned(),
+        target,
+        status: ConversionStatus::Passed,
         highdicom_readable: true,
         output_paths,
         report: observation.report.clone(),
@@ -195,13 +243,4 @@ pub(super) fn verify_report_outputs(
         }
     }
     Ok(())
-}
-
-fn matrix_name(target: &str) -> &'static str {
-    match target {
-        "ann" | "seg" => "ann-seg",
-        "sr" => "sr",
-        "pm" => "pm",
-        _ => "conversion",
-    }
 }

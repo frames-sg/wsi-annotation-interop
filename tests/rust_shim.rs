@@ -91,6 +91,6 @@ fn reference_shim_uses_a_json_only_subprocess_contract() {
         serde_json::from_slice(&fs::read(&observed.ground_truth).unwrap()).unwrap();
     assert_eq!(
         ground_truth,
-        wsi_annotation_interop::ground_truth::build_core_ground_truth()
+        wsi_annotation_interop::build_core_ground_truth()
     );
 }

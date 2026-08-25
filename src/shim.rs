@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ground_truth::build_core_ground_truth;
-use crate::process::{ProcessError, run};
+use crate::process::{CommandSpec, ProcessError, run};
 
 #[derive(Debug)]
 pub struct ShimError(String);
@@ -95,7 +96,7 @@ pub struct QualificationResult {
 
 #[derive(Debug)]
 pub struct ReferenceShim {
-    command: Vec<String>,
+    command: CommandSpec,
     timeout: Duration,
 }
 
@@ -106,9 +107,24 @@ impl ReferenceShim {
     ///
     /// Returns an error when the command is empty or the timeout is zero.
     pub fn new(command: Vec<String>, timeout: Duration) -> Result<Self, String> {
-        if command.is_empty() {
-            return Err("reference shim command must not be empty".to_owned());
-        }
+        let command = CommandSpec::from_strings(command, "reference shim")?;
+        Self::from_spec(command, timeout)
+    }
+
+    /// Construct a reference adapter without converting the program or fixed arguments to UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty program or zero timeout.
+    pub fn from_program(
+        program: impl Into<OsString>,
+        arguments: Vec<OsString>,
+        timeout: Duration,
+    ) -> Result<Self, String> {
+        Self::from_spec(CommandSpec::new(program.into(), arguments)?, timeout)
+    }
+
+    fn from_spec(command: CommandSpec, timeout: Duration) -> Result<Self, String> {
         if timeout.is_zero() {
             return Err("reference shim timeout must be positive".to_owned());
         }
@@ -121,10 +137,10 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures, malformed reports, or missing files.
     pub fn generate_core(&self, output: &Path) -> Result<FixtureSet, ShimError> {
-        let mut fixtures: FixtureSet = self.execute(&[
-            "generate-core".to_owned(),
-            "--output".to_owned(),
-            path_text(output),
+        let mut fixtures: FixtureSet = self.execute(vec![
+            OsString::from("generate-core"),
+            OsString::from("--output"),
+            output.as_os_str().to_owned(),
         ])?;
         fixtures.ground_truth = output.join("ground-truth-v1.json");
         let mut serialized = serde_json::to_vec_pretty(&build_core_ground_truth())
@@ -153,16 +169,19 @@ impl ReferenceShim {
         canonical_source: Option<&Path>,
     ) -> Result<Value, ShimError> {
         let mut arguments = vec![
-            "normalize-ann".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
-            "--annotation".to_owned(),
-            path_text(annotation),
+            OsString::from("normalize-ann"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
+            OsString::from("--annotation"),
+            annotation.as_os_str().to_owned(),
         ];
         if let Some(canonical_source) = canonical_source {
-            arguments.extend(["--canonical-source".to_owned(), path_text(canonical_source)]);
+            arguments.extend([
+                OsString::from("--canonical-source"),
+                canonical_source.as_os_str().to_owned(),
+            ]);
         }
-        self.execute(&arguments)
+        self.execute(arguments)
     }
 
     /// Normalize one SEG object through the independent reference implementation.
@@ -171,12 +190,12 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed JSON.
     pub fn normalize_seg(&self, annotation: &Path, source: &Path) -> Result<Value, ShimError> {
-        self.execute(&[
-            "normalize-seg".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
-            "--annotation".to_owned(),
-            path_text(annotation),
+        self.execute(vec![
+            OsString::from("normalize-seg"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
+            OsString::from("--annotation"),
+            annotation.as_os_str().to_owned(),
         ])
     }
 
@@ -186,10 +205,10 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed JSON.
     pub fn normalize_pm(&self, dicom: &Path) -> Result<Value, ShimError> {
-        self.execute(&[
-            "normalize-pm".to_owned(),
-            "--dicom".to_owned(),
-            path_text(dicom),
+        self.execute(vec![
+            OsString::from("normalize-pm"),
+            OsString::from("--dicom"),
+            dicom.as_os_str().to_owned(),
         ])
     }
 
@@ -199,10 +218,10 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed JSON.
     pub fn normalize_sr(&self, dicom: &Path) -> Result<Value, ShimError> {
-        self.execute(&[
-            "normalize-sr".to_owned(),
-            "--dicom".to_owned(),
-            path_text(dicom),
+        self.execute(vec![
+            OsString::from("normalize-sr"),
+            OsString::from("--dicom"),
+            dicom.as_os_str().to_owned(),
         ])
     }
 
@@ -212,10 +231,10 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed JSON.
     pub fn normalize_wsi(&self, source: &Path) -> Result<Value, ShimError> {
-        self.execute(&[
-            "normalize-wsi".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
+        self.execute(vec![
+            OsString::from("normalize-wsi"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
         ])
     }
 
@@ -225,10 +244,10 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed metadata.
     pub fn metadata(&self, dicom: &Path) -> Result<DicomMetadata, ShimError> {
-        self.execute(&[
-            "metadata".to_owned(),
-            "--dicom".to_owned(),
-            path_text(dicom),
+        self.execute(vec![
+            OsString::from("metadata"),
+            OsString::from("--dicom"),
+            dicom.as_os_str().to_owned(),
         ])
     }
 
@@ -243,14 +262,14 @@ impl ReferenceShim {
         output: &Path,
         coordinate_values: usize,
     ) -> Result<(), ShimError> {
-        let _: Value = self.execute(&[
-            "build-scale".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
-            "--output".to_owned(),
-            path_text(output),
-            "--coordinate-values".to_owned(),
-            coordinate_values.to_string(),
+        let _: Value = self.execute(vec![
+            OsString::from("build-scale"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
+            OsString::from("--output"),
+            output.as_os_str().to_owned(),
+            OsString::from("--coordinate-values"),
+            OsString::from(coordinate_values.to_string()),
         ])?;
         if !output.is_file() {
             return Err(ShimError(format!(
@@ -272,14 +291,14 @@ impl ReferenceShim {
         ann: &Path,
         seg: &Path,
     ) -> Result<QualificationResult, ShimError> {
-        self.execute(&[
-            "qualify-pydcm".to_owned(),
-            "--source".to_owned(),
-            path_text(source),
-            "--ann".to_owned(),
-            path_text(ann),
-            "--seg".to_owned(),
-            path_text(seg),
+        self.execute(vec![
+            OsString::from("qualify-pydcm"),
+            OsString::from("--source"),
+            source.as_os_str().to_owned(),
+            OsString::from("--ann"),
+            ann.as_os_str().to_owned(),
+            OsString::from("--seg"),
+            seg.as_os_str().to_owned(),
         ])
     }
 
@@ -289,15 +308,22 @@ impl ReferenceShim {
     ///
     /// Returns an error for subprocess failures or malformed JSON.
     pub fn environment(&self) -> Result<Value, ShimError> {
-        self.execute(&["environment".to_owned()])
+        self.execute(vec![OsString::from("environment")])
     }
 
-    fn execute<T: DeserializeOwned>(&self, arguments: &[String]) -> Result<T, ShimError> {
+    fn execute<T: DeserializeOwned>(&self, arguments: Vec<OsString>) -> Result<T, ShimError> {
         let mut command = self.command.clone();
-        command.extend_from_slice(arguments);
-        let output = run(&command, self.timeout).map_err(shim_process_error)?;
+        command.extend(arguments);
+        let output = run(&command.process_spec(self.timeout)).map_err(shim_process_error)?;
+        if output.stdout.truncated {
+            return Err(ShimError(format!(
+                "reference shim report exceeded the {} byte stdout limit ({} bytes observed)",
+                output.stdout.bytes.len(),
+                output.stdout.total_bytes
+            )));
+        }
         if !output.status.success() {
-            let detail = serde_json::from_slice::<Value>(&output.stdout)
+            let detail = serde_json::from_slice::<Value>(&output.stdout.bytes)
                 .ok()
                 .and_then(|value| {
                     value
@@ -305,19 +331,15 @@ impl ReferenceShim {
                         .and_then(Value::as_str)
                         .map(str::to_owned)
                 })
-                .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr).into_owned());
+                .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr.bytes).into_owned());
             return Err(ShimError(format!(
                 "reference shim exited with status {}: {detail}",
                 output.status
             )));
         }
-        serde_json::from_slice(&output.stdout)
+        serde_json::from_slice(&output.stdout.bytes)
             .map_err(|error| ShimError(format!("reference shim emitted invalid JSON: {error}")))
     }
-}
-
-fn path_text(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
 }
 
 fn shim_process_error(error: ProcessError) -> ShimError {

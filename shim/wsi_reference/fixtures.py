@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -447,6 +448,9 @@ def _segmentation_dataset(
         dimension_organization_type=dimension_organization_type,
     )
     if kind == "LABELMAP":
+        background = dataset.SegmentSequence[0]
+        if int(background.SegmentNumber) == 0:
+            background.SegmentationAlgorithmIdentificationSequence = deepcopy(algorithm)
         dataset.PatientOrientation = ""
     fix_runtime_metadata(dataset)
     fix_dimension_uid(dataset, index)

@@ -167,3 +167,31 @@ fn seg_comparator_ignores_run_order_but_detects_segment_semantic_loss() {
     let result = compare_seg(&expected, &actual).unwrap();
     assert_eq!(finding_codes(&result), ["SEGMENT_SEMANTICS_MISMATCH"]);
 }
+
+#[test]
+fn ann_comparator_rejects_malformed_group_entries() {
+    let mut malformed = ann();
+    malformed["groups"] = json!([null]);
+
+    assert!(
+        compare_ann(&malformed, &malformed, 1e-6, 1e-9)
+            .unwrap_err()
+            .contains("groups[0] must be an object")
+    );
+}
+
+#[test]
+fn seg_comparator_rejects_missing_segment_identity() {
+    let malformed = json!({
+        "source": {"sop_instance_uid": "2.25.1"},
+        "segmentation_kind": "BINARY",
+        "segments": [{"label": "tumor"}],
+        "masks": {"mode": "FullBinary", "runs": []}
+    });
+
+    assert!(
+        compare_seg(&malformed, &malformed)
+            .unwrap_err()
+            .contains("segments[0].number is missing or invalid")
+    );
+}

@@ -1,14 +1,19 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
+use std::io;
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
 use super::orthanc_configuration;
-use crate::process::{ProcessError, run};
+use crate::process::{CapturedStream, CommandSpec, ProcessError, join_reader, reader, run};
+
+const ORTHANC_LOG_LIMIT_BYTES: usize = 4 * 1024 * 1024;
+const ORTHANC_START_ATTEMPTS: usize = 3;
 
 pub struct LocalOrthanc {
     executable: PathBuf,
@@ -21,6 +26,10 @@ pub struct LocalOrthanc {
     version_stderr: String,
     stdout: String,
     stderr: String,
+    stdout_reader: Option<JoinHandle<io::Result<CapturedStream>>>,
+    stderr_reader: Option<JoinHandle<io::Result<CapturedStream>>>,
+    stdout_truncated: bool,
+    stderr_truncated: bool,
 }
 
 impl LocalOrthanc {
@@ -48,6 +57,10 @@ impl LocalOrthanc {
             version_stderr: String::new(),
             stdout: String::new(),
             stderr: String::new(),
+            stdout_reader: None,
+            stderr_reader: None,
+            stdout_truncated: false,
+            stderr_truncated: false,
         })
     }
 
@@ -71,6 +84,28 @@ impl LocalOrthanc {
             return Err(format!("Orthanc plugin not found: {}", plugin.display()));
         }
         self.capture_version()?;
+
+        for attempt in 1..=ORTHANC_START_ATTEMPTS {
+            self.clear_attempt_evidence();
+            match self.start_attempt() {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let stop_error = self.stop().err();
+                    let port_collision = is_port_collision(&error, &self.stdout, &self.stderr);
+                    if attempt < ORTHANC_START_ATTEMPTS && port_collision && stop_error.is_none() {
+                        continue;
+                    }
+                    return match stop_error {
+                        Some(stop_error) => Err(format!("{error}; cleanup failed: {stop_error}")),
+                        None => Err(error),
+                    };
+                }
+            }
+        }
+        Err("Orthanc startup attempts were exhausted".to_owned())
+    }
+
+    fn start_attempt(&mut self) -> Result<(), String> {
         let temporary = tempfile::Builder::new()
             .prefix("wsi-interop-orthanc-")
             .tempdir()
@@ -85,24 +120,28 @@ impl LocalOrthanc {
             .map_err(|error| format!("could not create Orthanc configuration: {error}"))?;
         serde_json::to_writer_pretty(config, &configuration)
             .map_err(|error| format!("could not write Orthanc configuration: {error}"))?;
-        let stdout_path = temporary.path().join("stdout.log");
-        let stderr_path = temporary.path().join("stderr.log");
-        let stdout = create_log(&stdout_path)?;
-        let stderr = create_log(&stderr_path)?;
-        let child = Command::new(&self.executable)
+        let mut child = Command::new(&self.executable)
             .arg(&config_path)
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::from(stderr))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| format!("could not start Orthanc: {error}"))?;
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("could not capture Orthanc stdout".to_owned());
+        };
+        let Some(stderr) = child.stderr.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("could not capture Orthanc stderr".to_owned());
+        };
+        self.stdout_reader = Some(reader(stdout, ORTHANC_LOG_LIMIT_BYTES));
+        self.stderr_reader = Some(reader(stderr, ORTHANC_LOG_LIMIT_BYTES));
         self.http_port = Some(http_port);
         self.child = Some(child);
         self.temporary = Some(temporary);
-        if let Err(error) = self.wait_until_ready() {
-            let _ = self.stop();
-            return Err(error);
-        }
-        Ok(())
+        self.wait_until_ready()
     }
 
     /// Return the active loopback-only `DICOMweb` root.
@@ -136,21 +175,8 @@ impl LocalOrthanc {
                 failure.get_or_insert_with(|| format!("could not wait for Orthanc: {error}"));
             }
         }
-        if let Some(temporary) = self.temporary.take() {
-            match read_log(&temporary.path().join("stdout.log")) {
-                Ok(log) => self.stdout = log,
-                Err(error) => {
-                    failure.get_or_insert(error);
-                }
-            }
-            match read_log(&temporary.path().join("stderr.log")) {
-                Ok(log) => self.stderr = log,
-                Err(error) => {
-                    failure.get_or_insert(error);
-                }
-            }
-            drop(temporary);
-        }
+        self.capture_logs(&mut failure);
+        drop(self.temporary.take());
         self.http_port = None;
         failure.map_or(Ok(()), Err)
     }
@@ -175,15 +201,57 @@ impl LocalOrthanc {
         &self.stderr
     }
 
+    #[must_use]
+    pub const fn stdout_truncated(&self) -> bool {
+        self.stdout_truncated
+    }
+
+    #[must_use]
+    pub const fn stderr_truncated(&self) -> bool {
+        self.stderr_truncated
+    }
+
+    fn capture_logs(&mut self, failure: &mut Option<String>) {
+        if let Some(reader) = self.stdout_reader.take() {
+            match join_reader(reader, "Orthanc stdout") {
+                Ok(output) => {
+                    self.stdout = String::from_utf8_lossy(&output.bytes).into_owned();
+                    self.stdout_truncated = output.truncated;
+                }
+                Err(error) => {
+                    failure.get_or_insert_with(|| error.to_string());
+                }
+            }
+        }
+        if let Some(reader) = self.stderr_reader.take() {
+            match join_reader(reader, "Orthanc stderr") {
+                Ok(output) => {
+                    self.stderr = String::from_utf8_lossy(&output.bytes).into_owned();
+                    self.stderr_truncated = output.truncated;
+                }
+                Err(error) => {
+                    failure.get_or_insert_with(|| error.to_string());
+                }
+            }
+        }
+    }
+
+    fn clear_attempt_evidence(&mut self) {
+        self.stdout.clear();
+        self.stderr.clear();
+        self.stdout_truncated = false;
+        self.stderr_truncated = false;
+    }
+
     fn capture_version(&mut self) -> Result<(), String> {
-        let command = vec![
-            self.executable.to_string_lossy().into_owned(),
-            "--version".to_owned(),
-        ];
-        match run(&command, Duration::from_secs(10)) {
+        let command = CommandSpec::new(
+            self.executable.as_os_str().to_owned(),
+            vec!["--version".into()],
+        )?;
+        match run(&command.process_spec(Duration::from_secs(10))) {
             Ok(output) => {
-                self.version_stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                self.version_stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                self.version_stdout = String::from_utf8_lossy(&output.stdout.bytes).into_owned();
+                self.version_stderr = String::from_utf8_lossy(&output.stderr.bytes).into_owned();
                 Ok(())
             }
             Err(ProcessError::TimedOut { .. }) => {
@@ -195,19 +263,20 @@ impl LocalOrthanc {
 
     fn wait_until_ready(&mut self) -> Result<(), String> {
         let deadline = Instant::now() + self.startup_timeout;
-        let url = format!(
-            "http://127.0.0.1:{}/system",
-            self.http_port.expect("start assigned an HTTP port")
-        );
+        let port = self
+            .http_port
+            .ok_or_else(|| "Orthanc startup has no assigned HTTP port".to_owned())?;
+        let url = format!("http://127.0.0.1:{port}/system");
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_millis(250)))
             .build()
             .into();
         while Instant::now() < deadline {
-            if let Some(status) = self
+            let child = self
                 .child
                 .as_mut()
-                .expect("start assigned an Orthanc child")
+                .ok_or_else(|| "Orthanc startup has no child process".to_owned())?;
+            if let Some(status) = child
                 .try_wait()
                 .map_err(|error| format!("could not query Orthanc startup: {error}"))?
             {
@@ -235,16 +304,11 @@ fn available_port() -> Result<u16, String> {
         .map_err(|error| format!("could not allocate a loopback port: {error}"))
 }
 
-fn create_log(path: &Path) -> Result<File, String> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|error| format!("could not create Orthanc log {}: {error}", path.display()))
-}
-
-fn read_log(path: &Path) -> Result<String, String> {
-    fs::read(path)
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .map_err(|error| format!("could not read Orthanc log {}: {error}", path.display()))
+fn is_port_collision(start_error: &str, stdout: &str, stderr: &str) -> bool {
+    [start_error, stdout, stderr].iter().any(|text| {
+        let lowercase = text.to_ascii_lowercase();
+        lowercase.contains("address already in use")
+            || lowercase.contains("failed to bind")
+            || lowercase.contains("bind() failed")
+    })
 }

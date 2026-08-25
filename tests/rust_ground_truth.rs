@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use sha2::{Digest, Sha256};
-use wsi_annotation_interop::ground_truth::build_core_ground_truth;
+use wsi_annotation_interop::build_core_ground_truth;
 
 #[test]
 fn core_ground_truth_is_deterministic_and_covers_the_matrix() {

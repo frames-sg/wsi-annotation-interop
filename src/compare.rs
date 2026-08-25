@@ -1,22 +1,19 @@
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
+
+mod geometry;
+mod statistics;
+
+pub use statistics::ErrorStats;
+use statistics::stats;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Finding {
     pub code: String,
     pub path: String,
     pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct ErrorStats {
-    pub count: usize,
-    pub max: f64,
-    pub median: f64,
-    pub rms: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -75,9 +72,9 @@ pub fn compare_ann(
         }
     }
 
-    let (expected_groups, expected_duplicates) = keyed(expected.get("groups"), "uid");
-    let (actual_groups, actual_duplicates) = keyed(actual.get("groups"), "uid");
-    if !expected_duplicates.is_empty() || !actual_duplicates.is_empty() {
+    let expected_groups = keyed(expected.get("groups"), "groups", "uid")?;
+    let actual_groups = keyed(actual.get("groups"), "groups", "uid")?;
+    if !expected_groups.duplicates.is_empty() || !actual_groups.duplicates.is_empty() {
         findings.push(finding(
             "DUPLICATE_GROUP_UID",
             "groups",
@@ -85,13 +82,15 @@ pub fn compare_ann(
         ));
     }
     let missing: Vec<_> = expected_groups
+        .values
         .keys()
-        .filter(|key| !actual_groups.contains_key(*key))
+        .filter(|key| !actual_groups.values.contains_key(*key))
         .cloned()
         .collect();
     let unexpected: Vec<_> = actual_groups
+        .values
         .keys()
-        .filter(|key| !expected_groups.contains_key(*key))
+        .filter(|key| !expected_groups.values.contains_key(*key))
         .cloned()
         .collect();
     if !missing.is_empty() || !unexpected.is_empty() {
@@ -104,8 +103,8 @@ pub fn compare_ann(
 
     let mut pixel_errors = Vec::new();
     let mut z_errors = Vec::new();
-    for (uid, expected_group) in &expected_groups {
-        let Some(actual_group) = actual_groups.get(uid) else {
+    for (uid, expected_group) in &expected_groups.values {
+        let Some(actual_group) = actual_groups.values.get(uid) else {
             continue;
         };
         let (group_pixel_errors, group_z_errors) = compare_ann_group(
@@ -153,24 +152,27 @@ pub fn compare_seg(expected: &Value, actual: &Value) -> Result<ComparisonResult,
         }
     }
 
-    let (expected_segments, expected_duplicates) = keyed(expected.get("segments"), "number");
-    let (actual_segments, actual_duplicates) = keyed(actual.get("segments"), "number");
-    if !expected_duplicates.is_empty() || !actual_duplicates.is_empty() {
+    let expected_segments = keyed(expected.get("segments"), "segments", "number")?;
+    let actual_segments = keyed(actual.get("segments"), "segments", "number")?;
+    if !expected_segments.duplicates.is_empty() || !actual_segments.duplicates.is_empty() {
         findings.push(finding(
             "DUPLICATE_SEGMENT_NUMBER",
             "segments",
             "segment numbers must be unique",
         ));
     }
-    if expected_segments.keys().collect::<Vec<_>>() != actual_segments.keys().collect::<Vec<_>>() {
+    if expected_segments.values.keys().collect::<Vec<_>>()
+        != actual_segments.values.keys().collect::<Vec<_>>()
+    {
         findings.push(finding(
             "SEGMENT_NUMBER_MISMATCH",
             "segments",
             "segment numbers differ",
         ));
     }
-    for (number, expected_segment) in expected_segments {
+    for (number, expected_segment) in expected_segments.values {
         if actual_segments
+            .values
             .get(&number)
             .is_some_and(|actual| *actual != expected_segment)
         {
@@ -271,11 +273,9 @@ fn compare_ann_group(
         .get("graphic_type")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let errors = coordinate_errors(expected_geometry, actual_geometry, graphic_type);
-    let native = native_coordinate_errors(expected_geometry, actual_geometry, graphic_type);
-    let errors = match (errors, native) {
-        (Ok((pixel, z)), Ok(native)) => (pixel, z, native),
-        (Err(error), _) | (_, Err(error)) => {
+    let errors = match geometry::errors(expected_geometry, actual_geometry, graphic_type) {
+        Ok(errors) => (errors.canonical, errors.z, errors.native),
+        Err(error) => {
             findings.push(finding(
                 "INVALID_GEOMETRY",
                 format!("{path}.geometry"),
@@ -369,27 +369,37 @@ fn semantic_data<'a>(
         .ok_or_else(|| "semantic.data must be an object".to_owned())
 }
 
+struct KeyedItems<'a> {
+    values: BTreeMap<String, &'a Map<String, Value>>,
+    duplicates: BTreeSet<String>,
+}
+
 fn keyed<'a>(
     items: Option<&'a Value>,
+    collection: &str,
     key: &str,
-) -> (BTreeMap<String, &'a Map<String, Value>>, BTreeSet<String>) {
+) -> Result<KeyedItems<'a>, String> {
     let mut result = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
-    let Some(items) = items.and_then(Value::as_array) else {
-        return (result, duplicates);
-    };
-    for item in items {
-        let Some(object) = item.as_object() else {
-            continue;
-        };
-        let Some(value) = object.get(key).and_then(key_value) else {
-            continue;
-        };
+    let items = items
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{collection} must be an array"))?;
+    for (index, item) in items.iter().enumerate() {
+        let object = item
+            .as_object()
+            .ok_or_else(|| format!("{collection}[{index}] must be an object"))?;
+        let value = object
+            .get(key)
+            .and_then(key_value)
+            .ok_or_else(|| format!("{collection}[{index}].{key} is missing or invalid"))?;
         if result.insert(value.clone(), object).is_some() {
             duplicates.insert(value);
         }
     }
-    (result, duplicates)
+    Ok(KeyedItems {
+        values: result,
+        duplicates,
+    })
 }
 
 fn key_value(value: &Value) -> Option<String> {
@@ -429,270 +439,6 @@ fn compare_geometry_digests(
     }
 }
 
-fn coordinate_errors(
-    expected: &Map<String, Value>,
-    actual: &Map<String, Value>,
-    graphic_type: &str,
-) -> Result<(Vec<f64>, Vec<f64>), String> {
-    let coordinate_dimensions = dimensions(expected, "canonical_dimensions")?;
-    if dimensions(actual, "canonical_dimensions")? != coordinate_dimensions {
-        return Err("canonical dimensions differ or are invalid".to_owned());
-    }
-    if expected.get("primitive_point_indices") != actual.get("primitive_point_indices") {
-        return Err("primitive point associations differ".to_owned());
-    }
-    let index_dimensions = expected
-        .get("native_dimensions")
-        .map_or(Ok(coordinate_dimensions), json_dimensions);
-    let actual_index_dimensions = actual
-        .get("native_dimensions")
-        .map_or(Ok(coordinate_dimensions), json_dimensions);
-    let (index_dimensions, actual_index_dimensions) = (index_dimensions?, actual_index_dimensions?);
-    if index_dimensions != actual_index_dimensions {
-        return Err("native dimensions differ or are invalid".to_owned());
-    }
-    let expected_primitives = primitives(
-        expected,
-        coordinate_dimensions,
-        index_dimensions,
-        "canonical_level0_coordinates",
-    )?;
-    let actual_primitives = primitives(
-        actual,
-        coordinate_dimensions,
-        index_dimensions,
-        "canonical_level0_coordinates",
-    )?;
-    if expected_primitives.len() != actual_primitives.len() {
-        return Err("primitive counts differ".to_owned());
-    }
-
-    let mut pixel_errors = Vec::new();
-    let mut z_errors = Vec::new();
-    for (mut expected_points, actual_points) in
-        expected_primitives.into_iter().zip(actual_primitives)
-    {
-        if expected_points.len() != actual_points.len() {
-            return Err("primitive point counts differ".to_owned());
-        }
-        if graphic_type == "ELLIPSE" && expected_points.len() == 4 {
-            expected_points = canonical_ellipse(&expected_points);
-        }
-        let actual_points = align_points(&expected_points, &actual_points, graphic_type);
-        for (expected_point, actual_point) in expected_points.iter().zip(&actual_points) {
-            pixel_errors.push(distance(&expected_point[..2], &actual_point[..2]));
-            if coordinate_dimensions == 3 {
-                z_errors.push((expected_point[2] - actual_point[2]).abs());
-            }
-        }
-    }
-    Ok((pixel_errors, z_errors))
-}
-
-fn native_coordinate_errors(
-    expected: &Map<String, Value>,
-    actual: &Map<String, Value>,
-    graphic_type: &str,
-) -> Result<Vec<f64>, String> {
-    if !expected.contains_key("native_coordinates") && !actual.contains_key("native_coordinates") {
-        return Ok(Vec::new());
-    }
-    let coordinate_dimensions = dimensions(expected, "native_dimensions")?;
-    if dimensions(actual, "native_dimensions")? != coordinate_dimensions {
-        return Err("native dimensions differ or are invalid".to_owned());
-    }
-    let expected_primitives = primitives(
-        expected,
-        coordinate_dimensions,
-        coordinate_dimensions,
-        "native_coordinates",
-    )?;
-    let actual_primitives = primitives(
-        actual,
-        coordinate_dimensions,
-        coordinate_dimensions,
-        "native_coordinates",
-    )?;
-    if expected_primitives.len() != actual_primitives.len() {
-        return Err("native primitive counts differ".to_owned());
-    }
-    let mut errors = Vec::new();
-    for (mut expected_points, actual_points) in
-        expected_primitives.into_iter().zip(actual_primitives)
-    {
-        if expected_points.len() != actual_points.len() {
-            return Err("native primitive point counts differ".to_owned());
-        }
-        if graphic_type == "ELLIPSE" && expected_points.len() == 4 {
-            expected_points = canonical_ellipse(&expected_points);
-        }
-        let actual_points = align_points(&expected_points, &actual_points, graphic_type);
-        errors.extend(
-            expected_points
-                .iter()
-                .zip(&actual_points)
-                .map(|(left, right)| distance(left, right)),
-        );
-    }
-    Ok(errors)
-}
-
-fn primitives(
-    geometry: &Map<String, Value>,
-    dimensions: usize,
-    index_dimensions: usize,
-    coordinate_key: &str,
-) -> Result<Vec<Vec<Vec<f64>>>, String> {
-    let raw = geometry
-        .get(coordinate_key)
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("{coordinate_key} must be an array"))?;
-    let coordinates: Vec<_> = raw
-        .iter()
-        .map(|value| {
-            value
-                .as_f64()
-                .filter(|value| value.is_finite())
-                .ok_or_else(|| format!("{coordinate_key} must be finite numeric data"))
-        })
-        .collect::<Result<_, _>>()?;
-    if coordinates.len() % dimensions != 0 {
-        return Err(format!(
-            "{coordinate_key} count is not divisible by its dimensions"
-        ));
-    }
-    let points: Vec<_> = coordinates
-        .chunks_exact(dimensions)
-        .map(<[f64]>::to_vec)
-        .collect();
-    let raw_starts = geometry
-        .get("primitive_point_indices")
-        .and_then(Value::as_array);
-    let scalar_offsets = if raw_starts.is_none_or(Vec::is_empty) {
-        if points.is_empty() {
-            Vec::new()
-        } else {
-            vec![0]
-        }
-    } else {
-        raw_starts
-            .unwrap()
-            .iter()
-            .map(|value| {
-                value
-                    .as_u64()
-                    .and_then(|value| value.checked_sub(1))
-                    .and_then(|value| usize::try_from(value).ok())
-                    .ok_or_else(|| "primitive point indices must be positive integers".to_owned())
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    if scalar_offsets
-        .iter()
-        .any(|offset| offset % index_dimensions != 0)
-    {
-        return Err("primitive point index is not aligned to a coordinate tuple".to_owned());
-    }
-    let starts: Vec<_> = scalar_offsets
-        .iter()
-        .map(|offset| offset / index_dimensions)
-        .collect();
-    if !points.is_empty() && starts.first() != Some(&0) {
-        return Err("primitive point indices must start at 1".to_owned());
-    }
-    if starts.iter().any(|start| *start >= points.len()) {
-        return Err("primitive point index is outside the coordinate payload".to_owned());
-    }
-    if starts.windows(2).any(|window| window[0] >= window[1]) {
-        return Err("primitive point indices must be strictly increasing".to_owned());
-    }
-    Ok(starts
-        .iter()
-        .enumerate()
-        .map(|(index, start)| {
-            let end = starts.get(index + 1).copied().unwrap_or(points.len());
-            points[*start..end].to_vec()
-        })
-        .collect())
-}
-
-fn align_points(expected: &[Vec<f64>], actual: &[Vec<f64>], graphic_type: &str) -> Vec<Vec<f64>> {
-    if expected.is_empty() {
-        return actual.to_vec();
-    }
-    if matches!(graphic_type, "POLYGON" | "RECTANGLE") {
-        let mut best = actual.to_vec();
-        let mut best_error = squared_error(expected, &best);
-        for reversed in [false, true] {
-            let mut points = actual.to_vec();
-            if reversed {
-                points.reverse();
-            }
-            for offset in 0..points.len() {
-                let mut candidate = points[offset..].to_vec();
-                candidate.extend_from_slice(&points[..offset]);
-                let error = squared_error(expected, &candidate);
-                if error < best_error {
-                    best = candidate;
-                    best_error = error;
-                }
-            }
-        }
-        best
-    } else if graphic_type == "ELLIPSE" && expected.len() == 4 && actual.len() == 4 {
-        canonical_ellipse(actual)
-    } else {
-        actual.to_vec()
-    }
-}
-
-fn canonical_ellipse(points: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let mut pairs = [
-        sorted_pair(&points[0], &points[1]),
-        sorted_pair(&points[2], &points[3]),
-    ];
-    pairs.sort_by(|left, right| {
-        distance(&right[0][..2], &right[1][..2])
-            .total_cmp(&distance(&left[0][..2], &left[1][..2]))
-            .then_with(|| compare_points(&left[0], &right[0]))
-            .then_with(|| compare_points(&left[1], &right[1]))
-    });
-    pairs.into_iter().flatten().collect()
-}
-
-fn sorted_pair(left: &[f64], right: &[f64]) -> [Vec<f64>; 2] {
-    if compare_points(left, right) == Ordering::Greater {
-        [right.to_vec(), left.to_vec()]
-    } else {
-        [left.to_vec(), right.to_vec()]
-    }
-}
-
-fn compare_points(left: &[f64], right: &[f64]) -> Ordering {
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| left.total_cmp(right))
-        .find(|ordering| *ordering != Ordering::Equal)
-        .unwrap_or_else(|| left.len().cmp(&right.len()))
-}
-
-fn squared_error(expected: &[Vec<f64>], actual: &[Vec<f64>]) -> f64 {
-    expected
-        .iter()
-        .zip(actual)
-        .flat_map(|(left, right)| left.iter().zip(right))
-        .map(|(left, right)| (left - right).powi(2))
-        .sum()
-}
-
-fn distance(left: &[f64], right: &[f64]) -> f64 {
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| (left - right).powi(2))
-        .sum::<f64>()
-        .sqrt()
-}
-
 fn canonical_masks(value: Option<&Value>) -> Option<Value> {
     let mut value = value?.clone();
     if let Some(runs) = value.get_mut("runs").and_then(Value::as_array_mut) {
@@ -707,50 +453,4 @@ fn canonical_masks(value: Option<&Value>) -> Option<Value> {
         });
     }
     Some(value)
-}
-
-fn dimensions(geometry: &Map<String, Value>, key: &str) -> Result<usize, String> {
-    geometry
-        .get(key)
-        .ok_or_else(|| format!("{key} is missing"))
-        .and_then(json_dimensions)
-}
-
-fn json_dimensions(value: &Value) -> Result<usize, String> {
-    match value.as_u64() {
-        Some(2) => Ok(2),
-        Some(3) => Ok(3),
-        _ => Err("coordinate dimensions must be 2 or 3".to_owned()),
-    }
-}
-
-fn stats(values: &[f64]) -> ErrorStats {
-    if values.is_empty() {
-        return ErrorStats {
-            count: 0,
-            max: 0.0,
-            median: 0.0,
-            rms: 0.0,
-        };
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let middle = sorted.len() / 2;
-    let median = if sorted.len().is_multiple_of(2) {
-        f64::midpoint(sorted[middle - 1], sorted[middle])
-    } else {
-        sorted[middle]
-    };
-    ErrorStats {
-        count: values.len(),
-        max: sorted.last().copied().unwrap_or(0.0),
-        median,
-        rms: (values.iter().map(|value| value * value).sum::<f64>() / usize_as_f64(values.len()))
-            .sqrt(),
-    }
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn usize_as_f64(value: usize) -> f64 {
-    value as f64
 }

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tempfile::tempdir;
-use wsi_annotation_interop::conversion_matrix::run_conversion_matrices;
 use wsi_annotation_interop::probe::ViewerProbe;
+use wsi_annotation_interop::run_conversion_matrices;
 use wsi_annotation_interop::shim::ReferenceShim;
 
 #[test]

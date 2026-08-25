@@ -178,12 +178,15 @@ def _annotation_group(
 
 
 def _segment(item: Dataset) -> dict[str, Any]:
+    number = int(item.SegmentNumber)
     return {
-        "number": int(item.SegmentNumber),
+        "number": number,
         "label": str(item.SegmentLabel),
         "description": _optional_string(item, "SegmentDescription") or "",
         "generation_type": _optional_string(item, "SegmentAlgorithmType") or "MANUAL",
-        "algorithms": _algorithms(item, "SegmentationAlgorithmIdentificationSequence"),
+        "algorithms": (
+            [] if number == 0 else _algorithms(item, "SegmentationAlgorithmIdentificationSequence")
+        ),
         "category": _code(item.SegmentedPropertyCategoryCodeSequence[0]),
         "property_type": _code(item.SegmentedPropertyTypeCodeSequence[0]),
         "property_type_modifiers": _codes(item, "SegmentedPropertyTypeModifierCodeSequence"),

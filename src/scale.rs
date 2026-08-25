@@ -15,6 +15,13 @@ pub struct ScaleCase {
     pub required: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScaleStatus {
+    Passed,
+    Failed,
+}
+
 impl ScaleCase {
     #[must_use]
     pub fn id(self) -> String {
@@ -27,7 +34,7 @@ pub struct ScaleObservation {
     pub case_id: String,
     pub coordinate_values: usize,
     pub required: bool,
-    pub status: String,
+    pub status: ScaleStatus,
     pub input_bytes: Option<u64>,
     pub output_bytes: Option<u64>,
     pub runtime_ms: Option<f64>,
@@ -116,7 +123,11 @@ fn run_scale_case(
         case_id,
         coordinate_values: case.coordinate_values,
         required: case.required,
-        status: if passed { "passed" } else { "failed" }.to_owned(),
+        status: if passed {
+            ScaleStatus::Passed
+        } else {
+            ScaleStatus::Failed
+        },
         input_bytes: Some(file_size(&input)?),
         output_bytes: Some(file_size(&output)?),
         runtime_ms: Some(inspected.elapsed_ms + roundtripped.elapsed_ms),
@@ -166,7 +177,7 @@ fn failed(directory: &Path, case: ScaleCase, message: String) -> ScaleObservatio
         case_id,
         coordinate_values: case.coordinate_values,
         required: case.required,
-        status: "failed".to_owned(),
+        status: ScaleStatus::Failed,
         input_bytes: fs::metadata(input).ok().map(|metadata| metadata.len()),
         output_bytes: fs::metadata(output).ok().map(|metadata| metadata.len()),
         runtime_ms: None,

@@ -1,58 +1,25 @@
-use std::fmt;
-use std::fs::File;
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::Serialize;
+use crate::process::{CapturedStream, CommandSpec, ProcessError, run};
 
-use crate::process::{ProcessError, run};
+mod discovery;
+mod known_defects;
+mod observation;
+mod spec;
+mod version;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValidatorInvocation {
-    Each,
-    Set,
-}
+use discovery::executable_available;
+use version::VersionOutput;
 
-#[derive(Debug, Clone)]
-pub struct ValidatorSpec {
-    pub name: String,
-    pub command: Vec<String>,
-    pub version_command: Vec<String>,
-    pub validation_args: Vec<String>,
-    pub invocation: ValidatorInvocation,
-    pub edition: Option<String>,
-    pub unsupported_markers: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ValidatorObservation {
-    pub name: String,
-    pub edition: Option<String>,
-    pub files: Vec<String>,
-    pub command: Vec<String>,
-    pub status: String,
-    pub returncode: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
-    pub version_command: Vec<String>,
-    pub version_returncode: Option<i32>,
-    pub version_stdout: String,
-    pub version_stderr: String,
-    pub elapsed_ms: f64,
-    pub peak_rss_bytes: u64,
-}
-
-#[derive(Debug)]
-pub struct ValidatorError(String);
-
-impl fmt::Display for ValidatorError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ValidatorError {}
+pub use known_defects::{
+    qualify_tiled_segmentation_sr_validator_defect, qualify_validate_iods_pm_defect,
+    qualify_validate_iods_seg_defect,
+};
+pub use observation::{
+    SamplingMetadata, StreamCapture, ValidatorError, ValidatorObservation, ValidatorStatus,
+};
+pub use spec::{ValidatorInvocation, ValidatorSpec, standard_validator_specs};
 
 /// Run one configured validator with complete command and version provenance.
 ///
@@ -79,65 +46,20 @@ pub fn run_validator(
             "at least one DICOM file is required".to_owned(),
         ));
     }
-    let paths: Vec<_> = files
-        .iter()
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect();
+    let base_command =
+        CommandSpec::from_strings(spec.command.clone(), "validator").map_err(ValidatorError)?;
     if !executable_available(&spec.command[0]) {
-        return Ok(vec![unavailable(spec, &paths)]);
+        return Ok(vec![unavailable(spec, files)]);
     }
-    let version = run_version(&spec.version_command, timeout);
-    let groups: Vec<Vec<String>> = match spec.invocation {
-        ValidatorInvocation::Each => paths.iter().cloned().map(|path| vec![path]).collect(),
-        ValidatorInvocation::Set => vec![paths],
+    let version = version::run(&spec.version_command, timeout);
+    let groups: Vec<Vec<PathBuf>> = match spec.invocation {
+        ValidatorInvocation::Each => files.iter().cloned().map(|path| vec![path]).collect(),
+        ValidatorInvocation::Set => vec![files.to_vec()],
     };
     Ok(groups
         .into_iter()
-        .map(|group| run_group(spec, group, &version, timeout))
+        .map(|group| run_group(spec, &base_command, &group, &version, timeout))
         .collect())
-}
-
-/// Return the four validators required by the full study profile.
-#[must_use]
-pub fn standard_validator_specs(edition: &str) -> Vec<ValidatorSpec> {
-    vec![
-        ValidatorSpec {
-            name: "validate_iods".to_owned(),
-            command: vec!["validate_iods".to_owned()],
-            version_command: validate_iods_version_command(),
-            validation_args: vec!["--edition".to_owned(), edition.to_owned()],
-            invocation: ValidatorInvocation::Each,
-            edition: Some(edition.to_owned()),
-            unsupported_markers: vec!["Unknown or retired SOP Class UID".to_owned()],
-        },
-        ValidatorSpec {
-            name: "dciodvfy".to_owned(),
-            command: vec!["dciodvfy".to_owned()],
-            version_command: vec!["dciodvfy".to_owned(), "-version".to_owned()],
-            validation_args: Vec::new(),
-            invocation: ValidatorInvocation::Each,
-            edition: Some("dicom3tools embedded dictionary".to_owned()),
-            unsupported_markers: Vec::new(),
-        },
-        ValidatorSpec {
-            name: "dcentvfy".to_owned(),
-            command: vec!["dcentvfy".to_owned()],
-            version_command: vec!["dcentvfy".to_owned(), "-version".to_owned()],
-            validation_args: Vec::new(),
-            invocation: ValidatorInvocation::Set,
-            edition: Some("dicom3tools embedded dictionary".to_owned()),
-            unsupported_markers: Vec::new(),
-        },
-        ValidatorSpec {
-            name: "dcm2json".to_owned(),
-            command: vec!["dcm2json".to_owned()],
-            version_command: vec!["dcm2json".to_owned(), "--version".to_owned()],
-            validation_args: Vec::new(),
-            invocation: ValidatorInvocation::Each,
-            edition: Some("DCMTK embedded dictionary".to_owned()),
-            unsupported_markers: Vec::new(),
-        },
-    ]
 }
 
 /// Execute all standard validators.
@@ -157,306 +79,51 @@ pub fn run_standard_validators(
     Ok(observations)
 }
 
-/// Reclassify the documented `validate_iods` Parametric Map functional-group
-/// table defect after the independent highdicom PM control exhibits it too.
-///
-/// Returns `true` only when the control confirms the exact defect signature.
-pub fn qualify_validate_iods_pm_defect(
-    observations: &mut [ValidatorObservation],
-    highdicom_pm: &Path,
-) -> bool {
-    let oracle_path = highdicom_pm.to_string_lossy();
-    let oracle_confirmed = observations.iter().any(|observation| {
-        observation.files.as_slice() == [oracle_path.as_ref()]
-            && is_known_parametric_map_table_defect(observation)
-    });
-    if !oracle_confirmed {
-        return false;
-    }
-    for observation in observations {
-        if is_known_parametric_map_table_defect(observation) {
-            "known_validator_defect".clone_into(&mut observation.status);
-        }
-    }
-    true
-}
-
-/// Reclassify one documented `validate_iods` SEG functional-group table
-/// signature after an independent highdicom SEG exhibits the same signature.
-pub fn qualify_validate_iods_seg_defect(
-    observations: &mut [ValidatorObservation],
-    highdicom_seg: &Path,
-) -> bool {
-    let oracle_path = highdicom_seg.to_string_lossy();
-    let Some(oracle_signature) = observations
-        .iter()
-        .find(|observation| observation.files.as_slice() == [oracle_path.as_ref()])
-        .and_then(segmentation_table_signature)
-    else {
-        return false;
-    };
-    for observation in observations {
-        if segmentation_table_signature(observation) == Some(oracle_signature) {
-            "known_validator_defect".clone_into(&mut observation.status);
-        }
-    }
-    true
-}
-
-/// Reclassify stale TID 1410 checks for tiled SEG references only after the
-/// same validator reports the exact defect for an independent highdicom SR.
-///
-/// Current TID 1410 requires both frame and segment selectors for a tiled SEG.
-pub fn qualify_tiled_segmentation_sr_validator_defect(
-    observations: &mut [ValidatorObservation],
-    highdicom_sr: &Path,
-) -> bool {
-    let oracle_path = highdicom_sr.to_string_lossy();
-    let confirmed_validators = observations
-        .iter()
-        .filter(|observation| {
-            observation.files.as_slice() == [oracle_path.as_ref()]
-                && is_known_tiled_segmentation_sr_defect(observation)
-        })
-        .map(|observation| observation.name.clone())
-        .collect::<Vec<_>>();
-    if confirmed_validators.is_empty() {
-        return false;
-    }
-    for observation in observations {
-        if confirmed_validators.contains(&observation.name)
-            && is_known_tiled_segmentation_sr_defect(observation)
-        {
-            "known_validator_defect".clone_into(&mut observation.status);
-        }
-    }
-    true
-}
-
-fn is_known_parametric_map_table_defect(observation: &ValidatorObservation) -> bool {
-    const REQUIRED: [&str; 5] = [
-        "Pixel Measures Sequence",
-        "Frame VOI LUT Sequence",
-        "Pixel Value Transformation Sequence",
-        "Parametric Map Frame Type Sequence",
-        "Real World Value Mapping Sequence",
-    ];
-    const ALLOWED: [&str; 7] = [
-        "Pixel Measures Sequence",
-        "Frame VOI LUT Sequence",
-        "Pixel Value Transformation Sequence",
-        "Parametric Map Frame Type Sequence",
-        "Real World Value Mapping Sequence",
-        "Derivation Image Sequence",
-        "Frame Content Sequence",
-    ];
-    if observation.name != "validate_iods"
-        || observation.status != "failed"
-        || observation.files.len() != 1
-    {
-        return false;
-    }
-    let output = format!("{}{}", observation.stdout, observation.stderr);
-    if !output.contains("(Parametric Map IOD)")
-        || REQUIRED
-            .iter()
-            .any(|name| !output.contains(&format!("({name}) is unexpected")))
-    {
-        return false;
-    }
-    output.lines().all(|line| {
-        let line = line.trim();
-        line.is_empty()
-            || line.starts_with("Using DICOM edition ")
-            || line.starts_with("Validating DICOM file ")
-            || line.starts_with("SOP class is ")
-            || matches!(
-                line,
-                "Errors" | "======" | "Module \"Multi-frame Functional Groups\":"
-            )
-            || matches!(
-                line,
-                "(5200,9229) (Shared Functional Groups Sequence):"
-                    | "(5200,9230) (Per-Frame Functional Groups Sequence):"
-            )
-            || (line.starts_with("Tag ")
-                && ALLOWED
-                    .iter()
-                    .any(|name| line.ends_with(&format!("({name}) is unexpected"))))
-    })
-}
-
-fn segmentation_table_signature(observation: &ValidatorObservation) -> Option<u8> {
-    const FUNCTIONAL_GROUPS: [&str; 5] = [
-        "Derivation Image Sequence",
-        "Pixel Measures Sequence",
-        "Frame Content Sequence",
-        "Plane Position (Slide) Sequence",
-        "Segment Identification Sequence",
-    ];
-    if observation.name != "validate_iods"
-        || observation.status != "failed"
-        || observation.files.len() != 1
-    {
-        return None;
-    }
-    let output = format!("{}{}", observation.stdout, observation.stderr);
-    if !output.contains("(Segmentation IOD)") {
-        return None;
-    }
-    let signature = FUNCTIONAL_GROUPS
-        .iter()
-        .enumerate()
-        .fold(0_u8, |signature, (index, name)| {
-            if output.contains(&format!("({name}) is unexpected")) {
-                signature | (1 << index)
-            } else {
-                signature
-            }
-        });
-    if signature == 0 {
-        return None;
-    }
-    output
-        .lines()
-        .all(|line| {
-            let line = line.trim();
-            line.is_empty()
-                || line.starts_with("Using DICOM edition ")
-                || line.starts_with("Validating DICOM file ")
-                || line.starts_with("SOP class is ")
-                || matches!(
-                    line,
-                    "Errors" | "======" | "Module \"Multi-frame Functional Groups\":"
-                )
-                || matches!(
-                    line,
-                    "(5200,9229) (Shared Functional Groups Sequence):"
-                        | "(5200,9230) (Per-Frame Functional Groups Sequence):"
-                )
-                || (line.starts_with("Tag ")
-                    && FUNCTIONAL_GROUPS
-                        .iter()
-                        .any(|name| line.ends_with(&format!("({name}) is unexpected"))))
-        })
-        .then_some(signature)
-}
-
-fn is_known_tiled_segmentation_sr_defect(observation: &ValidatorObservation) -> bool {
-    if observation.status != "failed" || observation.files.len() != 1 {
-        return false;
-    }
-    let output = format!("{}{}", observation.stdout, observation.stderr);
-    match observation.name.as_str() {
-        "dciodvfy" => {
-            const DEFECT: &str = "Error - Shall not be present when ReferencedFrameNumber is present - attribute <ReferencedSegmentNumber>";
-            output.contains("Comprehensive3DSR")
-                && output
-                    .lines()
-                    .filter(|line| line.trim_start().starts_with("Error - "))
-                    .eq([DEFECT])
-        }
-        "validate_iods" => is_known_validate_iods_tiled_segmentation_sr_defect(&output),
-        _ => false,
-    }
-}
-
-fn is_known_validate_iods_tiled_segmentation_sr_defect(output: &str) -> bool {
-    const FRAME_ERROR: &str = "Tag (0008,1160) (Referenced Frame Number) is unexpected";
-    const SEGMENT_ERROR: &str = "Tag (0062,000B) (Referenced Segment Number) is unexpected";
-    if !output.contains("(Comprehensive 3D SR IOD)")
-        || !output.contains(FRAME_ERROR)
-        || !output.contains(SEGMENT_ERROR)
-    {
-        return false;
-    }
-    output.lines().all(|line| {
-        let line = line.trim();
-        line.is_empty()
-            || line.starts_with("Using DICOM edition ")
-            || line.starts_with("Validating DICOM file ")
-            || line.starts_with("SOP class is ")
-            || matches!(
-                line,
-                "Errors" | "======" | "Module \"SR Document Content\":"
-            )
-            || (line.starts_with("(0040,A730) ")
-                && line.ends_with("(0008,1199) (Referenced SOP Sequence):"))
-            || matches!(line, FRAME_ERROR | SEGMENT_ERROR)
-    })
-}
-
-struct VersionOutput {
-    returncode: Option<i32>,
-    stdout: String,
-    stderr: String,
-}
-
 struct ValidationOutput {
-    status: &'static str,
+    status: ValidatorStatus,
     returncode: Option<i32>,
     stdout: String,
     stderr: String,
     elapsed_ms: f64,
     peak_rss_bytes: u64,
-}
-
-fn run_version(command: &[String], timeout: Duration) -> VersionOutput {
-    if command.is_empty() {
-        return VersionOutput {
-            returncode: None,
-            stdout: String::new(),
-            stderr: "version command was not configured".to_owned(),
-        };
-    }
-    match run(command, timeout) {
-        Ok(output) => VersionOutput {
-            returncode: output.status.code(),
-            stdout: text(&output.stdout),
-            stderr: text(&output.stderr),
-        },
-        Err(ProcessError::TimedOut { stdout, stderr, .. }) => VersionOutput {
-            returncode: None,
-            stdout: text(&stdout),
-            stderr: format!("{}version command timed out", text(&stderr)),
-        },
-        Err(error) => VersionOutput {
-            returncode: None,
-            stdout: String::new(),
-            stderr: error.to_string(),
-        },
-    }
+    sampling: SamplingMetadata,
+    stdout_capture: StreamCapture,
+    stderr_capture: StreamCapture,
 }
 
 fn run_group(
     spec: &ValidatorSpec,
-    files: Vec<String>,
+    base_command: &CommandSpec,
+    files: &[PathBuf],
     version: &VersionOutput,
     timeout: Duration,
 ) -> ValidatorObservation {
-    let mut command = spec.command.clone();
-    command.extend_from_slice(&spec.validation_args);
-    command.extend(files.iter().cloned());
-    let output = match run(&command, timeout) {
+    let mut command = base_command.clone();
+    command.extend(spec.validation_args.iter().cloned());
+    command.extend(files.iter().map(|path| path.as_os_str().to_owned()));
+    let display_command = command.display();
+    let output = match run(&command.process_spec(timeout)) {
         Ok(output) => {
-            let stdout = text(&output.stdout);
-            let stderr = text(&output.stderr);
+            let stdout = text(&output.stdout.bytes);
+            let stderr = text(&output.stderr.bytes);
             let combined = format!("{stdout}{stderr}");
-            let status = if output.status.success()
+            let status = if output.stdout.truncated || output.stderr.truncated {
+                ValidatorStatus::Failed
+            } else if output.status.success()
                 && !(spec.name == "dciodvfy"
                     && combined
                         .lines()
                         .any(|line| line.trim_start().starts_with("Error - ")))
             {
-                "passed"
+                ValidatorStatus::Passed
             } else if spec
                 .unsupported_markers
                 .iter()
                 .any(|marker| combined.contains(marker))
             {
-                "unsupported"
+                ValidatorStatus::Unsupported
             } else {
-                "failed"
+                ValidatorStatus::Failed
             };
             ValidationOutput {
                 status,
@@ -465,35 +132,43 @@ fn run_group(
                 stderr,
                 elapsed_ms: output.elapsed.as_secs_f64() * 1000.0,
                 peak_rss_bytes: output.peak_rss_bytes,
+                sampling: sampling_metadata(output.rss_sampled, output.sample_interval),
+                stdout_capture: stream_capture(&output.stdout),
+                stderr_capture: stream_capture(&output.stderr),
             }
         }
-        Err(ProcessError::TimedOut {
-            timeout,
-            stdout,
-            stderr,
-            peak_rss_bytes,
-        }) => ValidationOutput {
-            status: "timed_out",
+        Err(ProcessError::TimedOut { timeout, output }) => ValidationOutput {
+            status: ValidatorStatus::TimedOut,
             returncode: None,
-            stdout: text(&stdout),
+            stdout: text(&output.stdout.bytes),
             stderr: format!(
                 "{}validator timed out after {} seconds",
-                text(&stderr),
+                text(&output.stderr.bytes),
                 timeout.as_secs_f64()
             ),
-            elapsed_ms: timeout.as_secs_f64() * 1000.0,
-            peak_rss_bytes,
+            elapsed_ms: output.elapsed.as_secs_f64() * 1000.0,
+            peak_rss_bytes: output.peak_rss_bytes,
+            sampling: sampling_metadata(output.rss_sampled, output.sample_interval),
+            stdout_capture: stream_capture(&output.stdout),
+            stderr_capture: stream_capture(&output.stderr),
         },
         Err(error) => ValidationOutput {
-            status: "unavailable",
+            status: ValidatorStatus::Unavailable,
             returncode: None,
             stdout: String::new(),
             stderr: error.to_string(),
             elapsed_ms: 0.0,
             peak_rss_bytes: 0,
+            sampling: sampling_metadata(false, None),
+            stdout_capture: empty_capture(),
+            stderr_capture: empty_capture(),
         },
     };
-    observation(spec, files, command, version, output)
+    let display_files = files
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    observation(spec, display_files, display_command, version, output)
 }
 
 fn observation(
@@ -508,7 +183,7 @@ fn observation(
         edition: spec.edition.clone(),
         files,
         command,
-        status: output.status.to_owned(),
+        status: output.status,
         returncode: output.returncode,
         stdout: output.stdout,
         stderr: output.stderr,
@@ -516,89 +191,69 @@ fn observation(
         version_returncode: version.returncode,
         version_stdout: version.stdout.clone(),
         version_stderr: version.stderr.clone(),
+        version_stdout_capture: version.stdout_capture,
+        version_stderr_capture: version.stderr_capture,
         elapsed_ms: output.elapsed_ms,
         peak_rss_bytes: output.peak_rss_bytes,
+        sampling: output.sampling,
+        stdout_capture: output.stdout_capture,
+        stderr_capture: output.stderr_capture,
     }
 }
 
-fn unavailable(spec: &ValidatorSpec, files: &[String]) -> ValidatorObservation {
+fn unavailable(spec: &ValidatorSpec, files: &[PathBuf]) -> ValidatorObservation {
     let mut command = spec.command.clone();
     command.extend_from_slice(&spec.validation_args);
-    command.extend_from_slice(files);
+    command.extend(files.iter().map(|path| path.to_string_lossy().into_owned()));
     let version = VersionOutput {
         returncode: None,
         stdout: String::new(),
         stderr: String::new(),
+        stdout_capture: empty_capture(),
+        stderr_capture: empty_capture(),
     };
     let output = ValidationOutput {
-        status: "unavailable",
+        status: ValidatorStatus::Unavailable,
         returncode: None,
         stdout: String::new(),
         stderr: "validator executable was not found".to_owned(),
         elapsed_ms: 0.0,
         peak_rss_bytes: 0,
+        sampling: sampling_metadata(false, None),
+        stdout_capture: empty_capture(),
+        stderr_capture: empty_capture(),
     };
-    observation(spec, files.to_vec(), command, &version, output)
+    observation(
+        spec,
+        files
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        command,
+        &version,
+        output,
+    )
 }
 
-fn executable_available(executable: &str) -> bool {
-    executable_path(executable).is_some()
-}
-
-fn executable_path(executable: &str) -> Option<PathBuf> {
-    let path = Path::new(executable);
-    if path.components().count() > 1 {
-        return path.is_file().then(|| path.to_path_buf());
+fn stream_capture(stream: &CapturedStream) -> StreamCapture {
+    StreamCapture {
+        total_bytes: stream.total_bytes,
+        truncated: stream.truncated,
     }
-    std::env::var_os("PATH").and_then(|value| {
-        std::env::split_paths(&value)
-            .map(|directory| directory.join(executable))
-            .find(|candidate| candidate.is_file())
-    })
 }
 
-fn validate_iods_version_command() -> Vec<String> {
-    executable_path("validate_iods")
-        .and_then(|entrypoint| python_distribution_version_command(&entrypoint, "dicom-validator"))
-        .unwrap_or_else(|| vec!["validate_iods".to_owned(), "--version".to_owned()])
+const fn empty_capture() -> StreamCapture {
+    StreamCapture {
+        total_bytes: 0,
+        truncated: false,
+    }
 }
 
-fn python_distribution_version_command(
-    entrypoint: &Path,
-    distribution: &str,
-) -> Option<Vec<String>> {
-    if !distribution
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        return None;
+fn sampling_metadata(sampled: bool, interval: Option<Duration>) -> SamplingMetadata {
+    SamplingMetadata {
+        sampled,
+        interval_ms: interval.and_then(|value| u64::try_from(value.as_millis()).ok()),
     }
-    let mut bytes = Vec::new();
-    File::open(entrypoint)
-        .ok()?
-        .take(4_096)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    let first_line = std::str::from_utf8(&bytes).ok()?.lines().next()?;
-    let mut command = first_line
-        .strip_prefix("#!")?
-        .split_whitespace()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let invokes_python = command.iter().any(|part| {
-        Path::new(part)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.contains("python"))
-    });
-    if command.is_empty() || !invokes_python {
-        return None;
-    }
-    command.push("-c".to_owned());
-    command.push(format!(
-        "import importlib.metadata; print('{distribution} ' + importlib.metadata.version('{distribution}'))"
-    ));
-    Some(command)
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -611,7 +266,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::python_distribution_version_command;
+    use super::version::python_distribution_version_command;
 
     #[test]
     fn python_entrypoint_version_uses_the_entrypoints_own_interpreter() {

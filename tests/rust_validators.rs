@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 use wsi_annotation_interop::validators::{
-    ValidatorInvocation, ValidatorSpec, qualify_tiled_segmentation_sr_validator_defect,
-    qualify_validate_iods_pm_defect, qualify_validate_iods_seg_defect, run_validator,
-    standard_validator_specs,
+    ValidatorInvocation, ValidatorSpec, ValidatorStatus,
+    qualify_tiled_segmentation_sr_validator_defect, qualify_validate_iods_pm_defect,
+    qualify_validate_iods_seg_defect, run_validator, standard_validator_specs,
 };
 
 #[test]
@@ -41,7 +41,7 @@ fn validator_captures_version_edition_commands_outputs_and_unsupported_status() 
 
     assert_eq!(observations.len(), 1);
     let observation = &observations[0];
-    assert_eq!(observation.status, "unsupported");
+    assert_eq!(observation.status, ValidatorStatus::Unsupported);
     assert_eq!(observation.returncode, Some(3));
     assert_eq!(observation.stdout, "unsupported object");
     assert_eq!(observation.stderr, "detail");
@@ -49,6 +49,12 @@ fn validator_captures_version_edition_commands_outputs_and_unsupported_status() 
     assert_eq!(observation.edition.as_deref(), Some("2026c"));
     assert!(observation.elapsed_ms >= 0.0);
     assert!(observation.peak_rss_bytes > 0);
+    assert!(observation.sampling.sampled);
+    assert_eq!(observation.sampling.interval_ms, Some(100));
+    assert_eq!(observation.stdout_capture.total_bytes, 18);
+    assert_eq!(observation.stderr_capture.total_bytes, 6);
+    assert!(!observation.stdout_capture.truncated);
+    assert!(!observation.stderr_capture.truncated);
 }
 
 #[test]
@@ -75,7 +81,7 @@ fn missing_validator_is_reported_once_as_unavailable() {
     let observations = run_validator(&spec, &[dicom], Duration::from_secs(2)).unwrap();
 
     assert_eq!(observations.len(), 1);
-    assert_eq!(observations[0].status, "unavailable");
+    assert_eq!(observations[0].status, ValidatorStatus::Unavailable);
     assert!(observations[0].stderr.contains("not found"));
 }
 
@@ -100,7 +106,7 @@ fn dciodvfy_error_diagnostic_fails_even_when_the_process_exits_zero() {
 
     let observations = run_validator(&spec, &[dicom], Duration::from_secs(2)).unwrap();
 
-    assert_eq!(observations[0].status, "failed");
+    assert_eq!(observations[0].status, ValidatorStatus::Failed);
 }
 
 #[test]
@@ -111,6 +117,46 @@ fn standard_profile_declares_all_required_validators() {
     assert_eq!(names, ["validate_iods", "dciodvfy", "dcentvfy", "dcm2json"]);
     assert_eq!(specs[0].edition.as_deref(), Some("2026c"));
     assert_eq!(specs[2].invocation, ValidatorInvocation::Set);
+}
+
+#[test]
+#[ignore = "adapter calibration; run in release mode"]
+fn representative_validator_adapter_calibration() {
+    let directory = tempdir().unwrap();
+    let dicom = directory.path().join("input.dcm");
+    fs::write(&dicom, b"dicom").unwrap();
+    let spec = ValidatorSpec {
+        name: "synthetic-validator".to_owned(),
+        command: vec![
+            "/bin/sh".to_owned(),
+            "-c".to_owned(),
+            "i=0; while [ $i -lt 200 ]; do printf 'Info - validated item %s\\n' \"$i\"; i=$((i+1)); done".to_owned(),
+            "validator-calibration".to_owned(),
+        ],
+        version_command: vec!["/bin/sh".to_owned(), "-c".to_owned(), "printf 'validator 1.0'".to_owned()],
+        validation_args: Vec::new(),
+        invocation: ValidatorInvocation::Each,
+        edition: Some("calibration".to_owned()),
+        unsupported_markers: Vec::new(),
+    };
+    let mut samples = Vec::new();
+    for repetition in 0..8 {
+        let observation =
+            run_validator(&spec, std::slice::from_ref(&dicom), Duration::from_secs(2))
+                .unwrap()
+                .pop()
+                .unwrap();
+        assert_eq!(observation.status, ValidatorStatus::Passed);
+        assert!(observation.stdout.contains("validated item 199"));
+        if repetition > 0 {
+            samples.push(observation.elapsed_ms);
+        }
+    }
+    samples.sort_by(f64::total_cmp);
+    println!(
+        "validator-adapter repetitions=7 median_ms={:.3} min_ms={:.3} max_ms={:.3}",
+        samples[3], samples[0], samples[6]
+    );
 }
 
 #[test]
@@ -152,9 +198,28 @@ exit 5
     .unwrap();
 
     assert!(qualify_validate_iods_pm_defect(&mut observations, &oracle));
-    assert_eq!(observations[0].status, "known_validator_defect");
-    assert_eq!(observations[1].status, "known_validator_defect");
-    assert_eq!(observations[2].status, "failed");
+    assert_eq!(
+        observations[0].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(
+        observations[1].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(observations[2].status, ValidatorStatus::Failed);
+
+    for observation in &mut observations {
+        if observation.status == ValidatorStatus::KnownValidatorDefect {
+            observation.status = ValidatorStatus::Failed;
+        }
+    }
+    observations[0].stdout_capture.truncated = true;
+    assert!(!qualify_validate_iods_pm_defect(&mut observations, &oracle));
+    assert!(
+        observations
+            .iter()
+            .all(|observation| observation.status == ValidatorStatus::Failed)
+    );
 }
 
 #[test]
@@ -227,21 +292,39 @@ exit 5
     .unwrap();
 
     assert!(qualify_validate_iods_seg_defect(&mut observations, &oracle));
-    assert_eq!(observations[0].status, "known_validator_defect");
-    assert_eq!(observations[1].status, "known_validator_defect");
-    assert_eq!(observations[2].status, "failed");
-    assert_eq!(observations[3].status, "failed");
-    assert_eq!(observations[4].status, "failed");
+    assert_eq!(
+        observations[0].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(
+        observations[1].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(observations[2].status, ValidatorStatus::Failed);
+    assert_eq!(observations[3].status, ValidatorStatus::Failed);
+    assert_eq!(observations[4].status, ValidatorStatus::Failed);
 
     assert!(qualify_validate_iods_seg_defect(
         &mut observations,
         &dense_oracle
     ));
-    assert_eq!(observations[0].status, "known_validator_defect");
-    assert_eq!(observations[1].status, "known_validator_defect");
-    assert_eq!(observations[2].status, "known_validator_defect");
-    assert_eq!(observations[3].status, "known_validator_defect");
-    assert_eq!(observations[4].status, "failed");
+    assert_eq!(
+        observations[0].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(
+        observations[1].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(
+        observations[2].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(
+        observations[3].status,
+        ValidatorStatus::KnownValidatorDefect
+    );
+    assert_eq!(observations[4].status, ValidatorStatus::Failed);
 }
 
 #[test]
@@ -301,9 +384,9 @@ exit 2
         assert_eq!(
             observation.status,
             if is_unrelated {
-                "failed"
+                ValidatorStatus::Failed
             } else {
-                "known_validator_defect"
+                ValidatorStatus::KnownValidatorDefect
             }
         );
     }
@@ -313,8 +396,8 @@ exit 2
         .filter(|observation| observation.files != [oracle.to_string_lossy().as_ref()])
         .collect::<Vec<_>>();
     for observation in &mut without_oracle {
-        if observation.status == "known_validator_defect" {
-            observation.status = "failed".to_owned();
+        if observation.status == ValidatorStatus::KnownValidatorDefect {
+            observation.status = ValidatorStatus::Failed;
         }
     }
     assert!(!qualify_tiled_segmentation_sr_validator_defect(
@@ -324,6 +407,6 @@ exit 2
     assert!(
         without_oracle
             .iter()
-            .all(|observation| observation.status == "failed")
+            .all(|observation| observation.status == ValidatorStatus::Failed)
     );
 }

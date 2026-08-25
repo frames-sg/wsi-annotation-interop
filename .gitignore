@@ -6,4 +6,5 @@ __pycache__/
 *.pyc
 results/*
 !results/.gitkeep
+!results/README.md
 corpora/

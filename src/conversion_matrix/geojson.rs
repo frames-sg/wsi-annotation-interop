@@ -3,7 +3,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::inputs::ConversionInputs;
-use super::{ConversionObservation, passed, verify_report_outputs};
+use super::{ConversionObservation, ConversionTarget, passed, verify_report_outputs};
 use crate::probe::{GeoJsonCoordinateSpace, GeoJsonTarget, ViewerProbe};
 use crate::shim::{FixtureSet, ReferenceShim};
 
@@ -41,14 +41,19 @@ pub(super) fn run_direct(
     validate_direct_sr(&sr)?;
     Ok(vec![
         passed(
-            "ann-seg",
             "geojson-ann",
-            "ann",
+            ConversionTarget::Ann,
             &observation,
             vec![ann_path],
             ann,
         ),
-        passed("sr", "sr-direct", "sr", &observation, vec![sr_path], sr),
+        passed(
+            "sr-direct",
+            ConversionTarget::Sr,
+            &observation,
+            vec![sr_path],
+            sr,
+        ),
     ])
 }
 
@@ -86,17 +91,15 @@ pub(super) fn run_seg_reference(
     validate_seg_sr(&sr, &seg)?;
     Ok(vec![
         passed(
-            "ann-seg",
             "geojson-seg",
-            "seg",
+            ConversionTarget::Seg,
             &observation,
             vec![seg_path],
             seg,
         ),
         passed(
-            "sr",
             "sr-seg-reference",
-            "sr",
+            ConversionTarget::Sr,
             &observation,
             vec![sr_path],
             sr,

@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tempfile::tempdir;
 use wsi_annotation_interop::probe::ViewerProbe;
-use wsi_annotation_interop::profiles::run_core_profile;
+use wsi_annotation_interop::run_core_profile;
 use wsi_annotation_interop::shim::ReferenceShim;
 
 #[test]
@@ -41,13 +41,13 @@ fn rust_core_profile_writes_matrix_and_nonprimary_qualification_results() {
 
     let result = run_core_profile(&reference, &probe, directory.path(), "rust-core-test").unwrap();
 
-    assert!(result.ok);
     assert!(result.manifest.is_file());
     let manifest: Value = serde_json::from_slice(&fs::read(&result.manifest).unwrap()).unwrap();
     assert_eq!(
         manifest["metadata"]["reference"]["packages"]["highdicom"],
         "0.28.1"
     );
+    assert_eq!(manifest["metadata"]["baseline_definition_version"], 1);
     assert!(
         manifest["metadata"]["reference"]["packages"]
             .as_object()
@@ -83,4 +83,10 @@ fn rust_core_profile_writes_matrix_and_nonprimary_qualification_results() {
         qualification["status"].as_str(),
         Some("qualified" | "unqualified")
     ));
+    assert_eq!(
+        result.ok,
+        observations.iter().all(|item| {
+            item["phase"] == "qualification" || item["status"].as_str() == Some("passed")
+        })
+    );
 }

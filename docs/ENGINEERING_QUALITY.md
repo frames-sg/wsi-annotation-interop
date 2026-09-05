@@ -74,12 +74,12 @@ heuristics; executable gates and manual full-profile requirements are identified
 - Clippy with warnings denied;
 - a locked release build.
 
-`./scripts/check-core.sh` first builds and tests the sibling `annotation_probe`, then invokes the
+`./scripts/check-core.sh` first builds and tests the headless `wsi-annotation-probe` package in the sibling annotations repository, then invokes the
 quality gate with its exact path. The sibling is mandatory for this gate; absence or a contract
 failure fails the command.
 
 `./scripts/check-full.sh` is the explicit manual/full-runner gate. It requires `pydcm`, all four
-validators, an executable `ORTHANC_EXECUTABLE`, and the sibling viewer. It runs the core gate,
+validators, an executable `ORTHANC_EXECUTABLE`, and the annotations checkout. It runs the core gate,
 builds the release probe, executes the full profile, and publishes only the transactional run. A
 missing required component exits nonzero and is not a pass.
 

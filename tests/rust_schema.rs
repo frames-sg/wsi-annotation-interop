@@ -11,10 +11,8 @@ fn reference_report() -> Value {
 
 #[test]
 fn committed_v1_manifest_remains_readable_without_fabricated_provenance() {
-    let legacy: Value = serde_json::from_str(include_str!(
-        "../results/orthanc-pydcm-20260815-v1/manifest.json"
-    ))
-    .unwrap();
+    let legacy: Value =
+        serde_json::from_str(include_str!("data/legacy-run-manifest-v1.json")).unwrap();
 
     assert_eq!(
         validate_compatible_run_manifest(&legacy).unwrap(),

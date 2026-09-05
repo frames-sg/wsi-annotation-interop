@@ -10,3 +10,6 @@ New schema-v2 runs are published transactionally and CI retains the complete run
 ID and attempt; the manifest itself records those identifiers and exact source/build provenance.
 Publishing an external release asset or permanent URL is an explicit release action and is not
 performed by the harness automatically.
+
+Retained research runs are maintained separately from this software repository.
+The software regression fixture is `tests/data/legacy-run-manifest-v1.json`.

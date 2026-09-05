@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 harness_root="$(cd "${script_directory}/.." && pwd)"
-viewer_root="${DICOM_VIEWER_ROOT:-$(cd "${harness_root}/../dicom-viewer" && pwd)}"
+annotations_root="${WSI_DICOM_ANNOTATIONS_ROOT:-$(cd "${harness_root}/../wsi-dicom-annotations" && pwd)}"
 orthanc_executable="${ORTHANC_EXECUTABLE:-}"
 run_id="${RUN_ID:-full-$(date -u +%Y%m%dT%H%M%SZ)}"
 
@@ -18,13 +18,13 @@ for validator in validate_iods dciodvfy dcentvfy dcm2json; do
   fi
 done
 
-UV_SYNC_EXTRA=pydcm DICOM_VIEWER_ROOT="${viewer_root}" "${script_directory}/check-core.sh"
-cargo build --manifest-path "${viewer_root}/Cargo.toml" \
-  -p dicom-viewer --bin annotation_probe --release --locked
+UV_SYNC_EXTRA=pydcm WSI_DICOM_ANNOTATIONS_ROOT="${annotations_root}" "${script_directory}/check-core.sh"
+cargo build --manifest-path "${annotations_root}/Cargo.toml" \
+  -p wsi-annotation-probe --bin annotation_probe --release --locked
 
 cd "${harness_root}"
 target/release/wsi-annotation-interop run-full \
-  --probe "${viewer_root}/target/release/annotation_probe" \
+  --probe "${annotations_root}/target/release/annotation_probe" \
   --orthanc "${orthanc_executable}" \
   --results results \
   --run-id "${run_id}"

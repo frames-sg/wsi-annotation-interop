@@ -190,6 +190,11 @@ impl GitIdentity {
 }
 
 fn git_identity(root: &Path, executable: Option<&Path>) -> GitIdentity {
+    if !root.join(".git").exists() {
+        let mut identity = GitIdentity::unknown("path is not the root of its own Git worktree");
+        identity.executable_sha256 = executable.and_then(|path| sha256_file(path).ok());
+        return identity;
+    }
     let sha = git_text(root, ["rev-parse", "HEAD"]);
     let Some(sha) = sha else {
         let mut identity = GitIdentity::unknown("Git identity could not be read for this path");

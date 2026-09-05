@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
 
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -84,6 +86,89 @@ fn git_unavailable_provenance_is_unknown_with_a_reason() {
             .as_str()
             .is_some_and(|reason| !reason.is_empty())
     );
+}
+
+#[test]
+fn materialized_harness_does_not_inherit_an_ancestor_repository() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("study");
+    let ancestor_sha = initialize_repository(&repository);
+    let harness = repository.join("frozen-components/wsi-annotation-interop");
+    fs::create_dir_all(&harness).unwrap();
+
+    let provenance = collect_provenance(&harness, None);
+    let value = serde_json::to_value(provenance).unwrap();
+    let identity = &value["repositories"]["harness"];
+
+    assert_ne!(identity["sha"], ancestor_sha);
+    assert!(identity["sha"].is_null());
+    assert!(
+        identity["unknown_reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("own Git worktree"))
+    );
+}
+
+#[test]
+fn git_worktree_root_retains_repository_provenance() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("repository");
+    let expected_sha = initialize_repository(&repository);
+    let worktree_directory = tempdir().unwrap();
+    let worktree = worktree_directory.path().join("harness-worktree");
+    let output = git(
+        &repository,
+        &["worktree", "add", "--detach", worktree.to_str().unwrap()],
+    );
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let provenance = collect_provenance(&worktree, None);
+    let value = serde_json::to_value(provenance).unwrap();
+    let identity = &value["repositories"]["harness"];
+
+    assert_eq!(identity["sha"], expected_sha);
+    assert!(identity["unknown_reason"].is_null());
+}
+
+fn initialize_repository(repository: &Path) -> String {
+    fs::create_dir_all(repository).unwrap();
+    assert!(git(repository, &["init", "--quiet"]).status.success());
+    fs::write(repository.join("tracked.txt"), b"tracked\n").unwrap();
+    assert!(git(repository, &["add", "tracked.txt"]).status.success());
+    let output = git(
+        repository,
+        &[
+            "-c",
+            "user.name=Interop Test",
+            "-c",
+            "user.email=interop@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "initial",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "git commit failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = git(repository, &["rev-parse", "HEAD"]);
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+fn git(repository: &Path, arguments: &[&str]) -> Output {
+    Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(arguments)
+        .output()
+        .unwrap()
 }
 
 #[test]

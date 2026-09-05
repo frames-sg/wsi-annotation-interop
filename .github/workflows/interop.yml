@@ -8,7 +8,7 @@ on:
       annotations_ref:
         description: wsi-dicom-annotations branch, tag, or commit to test
         required: true
-        default: main
+        default: 71851b4a0c286fa9b57326e426962bf1a63a781e
         type: string
       run_full:
         description: Run validators, Orthanc, and 1M/5M scale cases
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: frames-sg/wsi-dicom-annotations
-          ref: ${{ inputs.annotations_ref || 'main' }}
+          ref: ${{ inputs.annotations_ref || '71851b4a0c286fa9b57326e426962bf1a63a781e' }}
           path: wsi-dicom-annotations
           persist-credentials: false
 
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: frames-sg/wsi-dicom-annotations
-          ref: ${{ inputs.annotations_ref || 'main' }}
+          ref: ${{ inputs.annotations_ref || '71851b4a0c286fa9b57326e426962bf1a63a781e' }}
           path: wsi-dicom-annotations
           persist-credentials: false
 

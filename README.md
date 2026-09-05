@@ -1,5 +1,8 @@
 # DICOM WSI Annotation Interoperability Harness
 
+This README describes the 0.1.1 development tree. The latest crates.io release
+is 0.1.0; use the source checkout for the current CLI and study-profile commands.
+
 This repository is the neutral Rust study harness for comparing DICOM Whole
 Slide Microscopy ANN, SEG, Comprehensive 3D SR, and Parametric Map
 implementations against declarative ground truth. It interacts with

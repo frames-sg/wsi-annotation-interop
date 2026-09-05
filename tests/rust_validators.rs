@@ -10,6 +10,23 @@ use wsi_annotation_interop::validators::{
     qualify_validate_iods_seg_defect, run_validator, standard_validator_specs,
 };
 
+fn shell_validator(name: &str, script: &str) -> ValidatorSpec {
+    ValidatorSpec {
+        name: name.to_owned(),
+        command: vec![
+            "/bin/sh".to_owned(),
+            "-c".to_owned(),
+            script.to_owned(),
+            "synthetic-validator".to_owned(),
+        ],
+        version_command: Vec::new(),
+        validation_args: Vec::new(),
+        invocation: ValidatorInvocation::Each,
+        edition: Some("2026c".to_owned()),
+        unsupported_markers: Vec::new(),
+    }
+}
+
 #[test]
 fn validator_captures_version_edition_commands_outputs_and_unsupported_status() {
     let directory = tempdir().unwrap();
@@ -176,20 +193,7 @@ done
 case "$1" in *unrelated*) printf 'Required attribute is missing\n';; esac
 exit 5
 "#;
-    let spec = ValidatorSpec {
-        name: "validate_iods".to_owned(),
-        command: vec![
-            "/bin/sh".to_owned(),
-            "-c".to_owned(),
-            script.to_owned(),
-            "synthetic-validator".to_owned(),
-        ],
-        version_command: Vec::new(),
-        validation_args: Vec::new(),
-        invocation: ValidatorInvocation::Each,
-        edition: Some("2026c".to_owned()),
-        unsupported_markers: Vec::new(),
-    };
+    let spec = shell_validator("validate_iods", script);
     let mut observations = run_validator(
         &spec,
         &[oracle.clone(), rust, unrelated],
@@ -264,20 +268,7 @@ case "$1" in *unrelated*) printf 'Required attribute is missing
 ';; esac
 exit 5
 "#;
-    let spec = ValidatorSpec {
-        name: "validate_iods".to_owned(),
-        command: vec![
-            "/bin/sh".to_owned(),
-            "-c".to_owned(),
-            script.to_owned(),
-            "synthetic-validator".to_owned(),
-        ],
-        version_command: Vec::new(),
-        validation_args: Vec::new(),
-        invocation: ValidatorInvocation::Each,
-        edition: Some("2026c".to_owned()),
-        unsupported_markers: Vec::new(),
-    };
+    let spec = shell_validator("validate_iods", script);
     let mut observations = run_validator(
         &spec,
         &[
@@ -351,20 +342,7 @@ exit 2
         ("dciodvfy", dciodvfy_script),
         ("validate_iods", validate_iods_script),
     ] {
-        let spec = ValidatorSpec {
-            name: name.to_owned(),
-            command: vec![
-                "/bin/sh".to_owned(),
-                "-c".to_owned(),
-                script.to_owned(),
-                "synthetic-validator".to_owned(),
-            ],
-            version_command: Vec::new(),
-            validation_args: Vec::new(),
-            invocation: ValidatorInvocation::Each,
-            edition: Some("2026c".to_owned()),
-            unsupported_markers: Vec::new(),
-        };
+        let spec = shell_validator(name, script);
         observations.extend(
             run_validator(
                 &spec,

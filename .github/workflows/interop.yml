@@ -5,10 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      viewer_ref:
-        description: dicom-viewer branch, tag, or commit to test
+      annotations_ref:
+        description: wsi-dicom-annotations branch, tag, or commit to test
         required: true
-        default: main
+        default: 71851b4a0c286fa9b57326e426962bf1a63a781e
         type: string
       run_full:
         description: Run validators, Orthanc, and 1M/5M scale cases
@@ -38,19 +38,11 @@ jobs:
           path: wsi-annotation-interop
           persist-credentials: false
 
-      - name: Checkout dicom-viewer
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: frames-sg/dicom-viewer
-          ref: ${{ inputs.viewer_ref || 'main' }}
-          path: dicom-viewer
-          persist-credentials: false
-
       - name: Checkout wsi-dicom-annotations
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: frames-sg/wsi-dicom-annotations
-          ref: a623e84405d9be6779e7065a71031228b20849a5
+          ref: ${{ inputs.annotations_ref || '71851b4a0c286fa9b57326e426962bf1a63a781e' }}
           path: wsi-dicom-annotations
           persist-credentials: false
 
@@ -64,28 +56,17 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install Linux viewer dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-3-dev \
-            libxdo-dev \
-            libxkbcommon-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
-
       - name: Verify cross-repository core gate
         working-directory: wsi-annotation-interop
         env:
-          DICOM_VIEWER_ROOT: ${{ github.workspace }}/dicom-viewer
+          WSI_DICOM_ANNOTATIONS_ROOT: ${{ github.workspace }}/wsi-dicom-annotations
         run: ./scripts/check-core.sh
 
       - name: Publish core-profile run directory
         if: always()
         working-directory: wsi-annotation-interop
         env:
-          ANNOTATION_PROBE: ${{ github.workspace }}/dicom-viewer/target/debug/annotation_probe
+          ANNOTATION_PROBE: ${{ github.workspace }}/wsi-dicom-annotations/target/debug/annotation_probe
           RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-core
         run: |
           set +e
@@ -126,19 +107,11 @@ jobs:
           path: wsi-annotation-interop
           persist-credentials: false
 
-      - name: Checkout dicom-viewer
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: frames-sg/dicom-viewer
-          ref: ${{ inputs.viewer_ref }}
-          path: dicom-viewer
-          persist-credentials: false
-
       - name: Checkout wsi-dicom-annotations
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: frames-sg/wsi-dicom-annotations
-          ref: a623e84405d9be6779e7065a71031228b20849a5
+          ref: ${{ inputs.annotations_ref || '71851b4a0c286fa9b57326e426962bf1a63a781e' }}
           path: wsi-dicom-annotations
           persist-credentials: false
 
@@ -153,7 +126,7 @@ jobs:
       - name: Run explicit full gate
         working-directory: wsi-annotation-interop
         env:
-          DICOM_VIEWER_ROOT: ${{ github.workspace }}/dicom-viewer
+          WSI_DICOM_ANNOTATIONS_ROOT: ${{ github.workspace }}/wsi-dicom-annotations
           ORTHANC_EXECUTABLE: ${{ inputs.orthanc_executable }}
           RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
         run: ./scripts/check-full.sh

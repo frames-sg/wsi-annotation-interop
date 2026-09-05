@@ -1,9 +1,12 @@
 # DICOM WSI Annotation Interoperability Harness
 
+This README describes the 0.1.1 development tree. The latest crates.io release
+is 0.1.0; use the source checkout for the current CLI and study-profile commands.
+
 This repository is the neutral Rust study harness for comparing DICOM Whole
 Slide Microscopy ANN, SEG, Comprehensive 3D SR, and Parametric Map
 implementations against declarative ground truth. It interacts with
-`dicom-viewer` only through DICOM files, the `annotation_probe` subprocess, and
+`wsi-dicom-annotations` only through DICOM files, the `annotation_probe` subprocess, and
 its versioned JSON report contracts.
 
 The core profile uses deterministic, non-PHI synthetic cases. External validators,
@@ -37,7 +40,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo build --release --locked
 ```
 
-The cross-repository core gate builds the sibling viewer probe, runs the Rust tests,
+The cross-repository core gate builds the headless `wsi-annotation-probe` package in the sibling annotations repository, runs the Rust tests,
 executes the synthetic highdicom/viewer matrix, checks the reference shim, and builds
 the Rust binary:
 
@@ -47,10 +50,11 @@ the Rust binary:
 
 Use `./scripts/check-quality.sh` for the repository-only executable gate. The explicit full gate is
 `ORTHANC_EXECUTABLE=/absolute/path/to/Orthanc ./scripts/check-full.sh`; it fails when Orthanc,
-pydcm, a required validator, or the sibling viewer is unavailable.
+pydcm, a required validator, or the annotations checkout is unavailable.
 
-Set `DICOM_VIEWER_ROOT` only when the viewer checkout is not the default sibling
-directory.
+Set `WSI_DICOM_ANNOTATIONS_ROOT` only when the annotations checkout is not the default
+sibling directory. No desktop viewer or GUI build dependencies are required.
+The established highdicom/viewer case identifiers and report schemas remain unchanged.
 
 ## Study profiles
 
@@ -58,7 +62,7 @@ Generate the immutable core artifacts with an explicit run identifier:
 
 ```console
 cargo run --release --locked -- run-core \
-  --probe ../dicom-viewer/target/debug/annotation_probe \
+  --probe ../wsi-dicom-annotations/target/debug/annotation_probe \
   --results results \
   --run-id core-001
 ```
@@ -70,7 +74,7 @@ optional pinned pydcm environment and supply Orthanc explicitly when it is avail
 ```console
 uv sync --locked --extra pydcm
 cargo run --release --locked -- run-full \
-  --probe ../dicom-viewer/target/release/annotation_probe \
+  --probe ../wsi-dicom-annotations/target/release/annotation_probe \
   --dicom-edition 2026c \
   --orthanc /absolute/path/to/Orthanc \
   --results results \

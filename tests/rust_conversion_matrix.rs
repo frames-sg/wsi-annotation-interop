@@ -8,6 +8,7 @@ use wsi_annotation_interop::run_conversion_matrices;
 use wsi_annotation_interop::shim::ReferenceShim;
 
 #[test]
+#[ignore = "requires the external annotation_probe built by scripts/check-core.sh"]
 fn rust_runs_separate_geojson_sr_and_parametric_map_conversion_matrices() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let python = root.join(".venv/bin/python");

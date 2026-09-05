@@ -32,20 +32,12 @@ fn rust_cli_owns_help_and_usage_exit_codes() {
 }
 
 #[test]
-fn rust_cli_runs_core_and_reports_pydcm_as_nonprimary() {
+fn rust_cli_reports_pydcm_as_nonprimary() {
     let executable = env!("CARGO_BIN_EXE_wsi-annotation-interop");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let python = root.join(".venv/bin/python");
     let shim = root.join("shim/reference_shim.py");
-    let probe = env::var_os("ANNOTATION_PROBE").map_or_else(
-        || root.join("../dicom-viewer/target/debug/annotation_probe"),
-        PathBuf::from,
-    );
     assert!(python.is_file(), "run `uv sync --locked` first");
-    assert!(
-        probe.is_file(),
-        "build annotation_probe or set ANNOTATION_PROBE"
-    );
 
     let qualification = Command::new(executable)
         .args(["--reference-python", python.to_str().unwrap()])
@@ -79,7 +71,24 @@ fn rust_cli_runs_core_and_reports_pydcm_as_nonprimary() {
                     .is_some_and(|text| text.contains("no foreground labels")))
         );
     }
+}
 
+#[test]
+#[ignore = "requires the external annotation_probe built by scripts/check-core.sh"]
+fn rust_cli_runs_core_with_external_annotation_probe() {
+    let executable = env!("CARGO_BIN_EXE_wsi-annotation-interop");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let python = root.join(".venv/bin/python");
+    let shim = root.join("shim/reference_shim.py");
+    let probe = env::var_os("ANNOTATION_PROBE").map_or_else(
+        || root.join("../dicom-viewer/target/debug/annotation_probe"),
+        PathBuf::from,
+    );
+    assert!(python.is_file(), "run `uv sync --locked` first");
+    assert!(
+        probe.is_file(),
+        "build annotation_probe or set ANNOTATION_PROBE"
+    );
     let directory = tempdir().unwrap();
     let core = Command::new(executable)
         .args(["--reference-python", python.to_str().unwrap()])

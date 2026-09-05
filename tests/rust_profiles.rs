@@ -10,6 +10,7 @@ use wsi_annotation_interop::run_core_profile;
 use wsi_annotation_interop::shim::ReferenceShim;
 
 #[test]
+#[ignore = "requires the external annotation_probe built by scripts/check-core.sh"]
 fn rust_core_profile_writes_matrix_and_nonprimary_qualification_results() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let python = root.join(".venv/bin/python");

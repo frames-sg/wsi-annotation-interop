@@ -55,6 +55,7 @@ fn scale_profile_requires_one_million_and_profiles_five_million_coordinates() {
 }
 
 #[test]
+#[ignore = "requires the external annotation_probe built by scripts/check-core.sh"]
 fn rust_runs_a_scale_roundtrip_with_digest_payloads() {
     let (reference, probe) = real_adapters();
     let directory = tempdir().unwrap();

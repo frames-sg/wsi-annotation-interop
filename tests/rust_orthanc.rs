@@ -4,13 +4,14 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::thread;
 
 use serde_json::json;
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
 use wsi_annotation_interop::orthanc::{
-    DicomwebLimits, DicomwebObject, LocalOrthanc, orthanc_configuration, validate_loopback_url,
-    verify_dicomweb_transport, verify_dicomweb_transport_with_limits,
+    DicomwebLimits, DicomwebObject, DicomwebTransportResult, LocalOrthanc, orthanc_configuration,
+    validate_loopback_url, verify_dicomweb_transport, verify_dicomweb_transport_with_limits,
 };
 
 #[test]
@@ -507,47 +508,10 @@ fn oversized_qido_response_stops_before_wado() {
 
 #[test]
 fn malformed_multipart_wado_is_not_published() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        for request_number in 0..3 {
-            let (mut stream, _) = listener.accept().unwrap();
-            let _ = read_request(&mut stream);
-            match request_number {
-                0 => respond(
-                    &mut stream,
-                    "200 OK",
-                    "application/dicom+json",
-                    &stow_success("2.25.3"),
-                ),
-                1 => respond(
-                    &mut stream,
-                    "200 OK",
-                    "application/dicom+json",
-                    br#"[{"00080018":{"vr":"UI","Value":["2.25.3"]}}]"#,
-                ),
-                _ => respond(
-                    &mut stream,
-                    "200 OK",
-                    "multipart/related; boundary=declared-boundary",
-                    b"--different-boundary\r\nContent-Type: application/dicom\r\n\r\ndicom\r\n--different-boundary--\r\n",
-                ),
-            }
-        }
-    });
-    let directory = tempdir().unwrap();
-    let object = single_object(directory.path(), b"dicom");
-    let retrieved = directory.path().join("retrieved");
-
-    let result = verify_dicomweb_transport(
-        &format!("http://{address}/dicom-web"),
-        &[object],
-        &retrieved,
-        |_, _| Ok(json!(null)),
-    )
-    .unwrap();
-
-    server.join().unwrap();
+    let (_directory, result, retrieved) = malformed_multipart_result(
+        "multipart/related; boundary=declared-boundary",
+        b"--different-boundary\r\nContent-Type: application/dicom\r\n\r\ndicom\r\n--different-boundary--\r\n",
+    );
     assert!(!result.observations[0].wado);
     assert!(result.observations[0].message.contains("initial boundary"));
     assert!(!retrieved.join("2.25.3-retrieved.dcm").exists());
@@ -555,6 +519,24 @@ fn malformed_multipart_wado_is_not_published() {
 
 #[test]
 fn multipart_wado_without_a_dicom_part_is_not_published() {
+    let (_directory, result, retrieved) = malformed_multipart_result(
+        "multipart/related; boundary=dicom-boundary",
+        b"--dicom-boundary\r\nContent-Type: text/plain\r\n\r\nnot dicom\r\n--dicom-boundary--\r\n",
+    );
+
+    assert!(!result.observations[0].wado);
+    assert!(
+        result.observations[0]
+            .message
+            .contains("no application/dicom")
+    );
+    assert!(!retrieved.join("2.25.3-retrieved.dcm").exists());
+}
+
+fn malformed_multipart_result(
+    content_type: &'static str,
+    body: &'static [u8],
+) -> (TempDir, DicomwebTransportResult, PathBuf) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
@@ -574,12 +556,7 @@ fn multipart_wado_without_a_dicom_part_is_not_published() {
                     "application/dicom+json",
                     br#"[{"00080018":{"vr":"UI","Value":["2.25.3"]}}]"#,
                 ),
-                _ => respond(
-                    &mut stream,
-                    "200 OK",
-                    "multipart/related; boundary=dicom-boundary",
-                    b"--dicom-boundary\r\nContent-Type: text/plain\r\n\r\nnot dicom\r\n--dicom-boundary--\r\n",
-                ),
+                _ => respond(&mut stream, "200 OK", content_type, body),
             }
         }
     });
@@ -596,13 +573,7 @@ fn multipart_wado_without_a_dicom_part_is_not_published() {
     .unwrap();
 
     server.join().unwrap();
-    assert!(!result.observations[0].wado);
-    assert!(
-        result.observations[0]
-            .message
-            .contains("no application/dicom")
-    );
-    assert!(!retrieved.join("2.25.3-retrieved.dcm").exists());
+    (directory, result, retrieved)
 }
 
 #[test]

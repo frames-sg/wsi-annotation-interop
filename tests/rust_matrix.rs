@@ -51,6 +51,7 @@ fn rust_matrix_rejects_tampered_ground_truth_before_running_tools() {
 }
 
 #[test]
+#[ignore = "requires the external annotation_probe built by scripts/check-core.sh"]
 fn rust_runs_the_complete_highdicom_viewer_core_matrix() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let python = root.join(".venv/bin/python");

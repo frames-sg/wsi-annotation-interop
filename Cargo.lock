@@ -1286,6 +1286,7 @@ version = "0.1.1"
 dependencies = [
  "clap",
  "jsonschema",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::process::{CommandSpec, ProcessError, ProcessOutput, run};
@@ -97,9 +98,10 @@ pub struct ProbeObservation {
     pub stderr_truncated: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProbeError {
-    message: String,
+    #[serde(flatten)]
+    details: Box<ProbeErrorDetails>,
     pub report: Option<Value>,
     pub stderr: String,
     pub returncode: Option<i32>,
@@ -108,7 +110,13 @@ pub struct ProbeError {
     pub command: Option<Box<Vec<String>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+struct ProbeErrorDetails {
+    message: String,
+    elapsed_ms: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ProbeProcessEvidence {
     pub stdout_truncated: bool,
     pub stderr_truncated: bool,
@@ -119,13 +127,19 @@ pub struct ProbeProcessEvidence {
 
 impl fmt::Display for ProbeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
+        formatter.write_str(&self.details.message)
     }
 }
 
 impl std::error::Error for ProbeError {}
 
 impl ProbeError {
+    /// Measured subprocess time, absent when the process could not be launched.
+    #[must_use]
+    pub(crate) const fn elapsed_ms(&self) -> Option<f64> {
+        self.details.elapsed_ms
+    }
+
     fn with_command(mut self, command: &[String]) -> Self {
         self.command = Some(Box::new(command.to_vec()));
         self
@@ -442,7 +456,10 @@ impl ViewerProbe {
 
 fn configuration_error(message: &str) -> ProbeError {
     ProbeError {
-        message: message.to_owned(),
+        details: Box::new(ProbeErrorDetails {
+            message: message.to_owned(),
+            elapsed_ms: None,
+        }),
         report: None,
         stderr: String::new(),
         returncode: None,
@@ -460,7 +477,10 @@ fn observed_error(
     command: &[String],
 ) -> ProbeError {
     ProbeError {
-        message,
+        details: Box::new(ProbeErrorDetails {
+            message,
+            elapsed_ms: Some(output.elapsed.as_secs_f64() * 1000.0),
+        }),
         report,
         stderr,
         returncode: output.status.code(),
@@ -481,10 +501,13 @@ fn observed_error(
 fn process_error(error: ProcessError) -> ProbeError {
     match error {
         ProcessError::TimedOut { timeout, output } => ProbeError {
-            message: format!(
-                "annotation_probe timed out after {} seconds",
-                timeout.as_secs_f64()
-            ),
+            details: Box::new(ProbeErrorDetails {
+                elapsed_ms: Some(output.elapsed.as_secs_f64() * 1000.0),
+                message: format!(
+                    "annotation_probe timed out after {} seconds",
+                    timeout.as_secs_f64()
+                ),
+            }),
             report: (!output.stdout.truncated)
                 .then(|| serde_json::from_slice(&output.stdout.bytes).ok())
                 .flatten(),
@@ -503,7 +526,10 @@ fn process_error(error: ProcessError) -> ProbeError {
             command: None,
         },
         error => ProbeError {
-            message: format!("annotation_probe execution failed: {error}"),
+            details: Box::new(ProbeErrorDetails {
+                elapsed_ms: None,
+                message: format!("annotation_probe execution failed: {error}"),
+            }),
             report: None,
             stderr: String::new(),
             returncode: None,

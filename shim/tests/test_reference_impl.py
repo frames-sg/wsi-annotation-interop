@@ -90,6 +90,12 @@ def test_reference_normalizes_parametric_map_semantics(tmp_path: Path) -> None:
     fixtures = generate_core_fixtures(tmp_path / "fixtures")
 
     normalized = normalize_pm(fixtures.pm)
+    sampled = normalize_pm(fixtures.pm, include_samples=True)
+    values = pydicom.dcmread(fixtures.pm).pixel_array.reshape(-1)
+    assert sampled["pixel"]["samples"] == [
+        None if np.isnan(value) else float(value) for value in values
+    ]
+    assert "samples" not in normalized["pixel"]
 
     assert normalized["dimension_organization_type"] == "TILED_FULL"
     assert normalized["matrix"] == {

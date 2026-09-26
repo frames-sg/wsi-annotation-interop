@@ -2,14 +2,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::probe::{ProbeObservation, ViewerProbe};
 use crate::results::sha256_file;
 use crate::shim::{FixtureSet, ReferenceShim};
 
+mod expected;
 mod geojson;
 mod inputs;
+mod observation;
 mod parametric_map;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -66,6 +68,7 @@ pub struct ConversionObservation {
     pub report: Value,
     pub normalized: Value,
     pub command: Vec<String>,
+    /// Legacy aggregate; zero when unavailable. Failed rows retain nullable measurements in `report`.
     pub runtime_ms: f64,
     pub peak_rss_bytes: u64,
     pub peak_tracked_heap_bytes: u64,
@@ -108,90 +111,35 @@ pub fn run_conversion_matrices(
     })?;
     let inputs = inputs::prepare(&output_directory.join("inputs"))?;
     let mut observations = Vec::with_capacity(6);
-    record(
-        &mut observations,
-        &[
-            ("geojson-ann", ConversionTarget::Ann),
-            ("sr-direct", ConversionTarget::Sr),
-        ],
-        geojson::run_direct(fixtures, reference, probe, output_directory, &inputs),
-    );
-    record(
-        &mut observations,
-        &[
-            ("geojson-seg", ConversionTarget::Seg),
-            ("sr-seg-reference", ConversionTarget::Sr),
-        ],
-        geojson::run_seg_reference(fixtures, reference, probe, output_directory, &inputs),
-    );
-    record(
-        &mut observations,
-        &[("pm-float32", ConversionTarget::Pm)],
-        parametric_map::run_single(fixtures, reference, probe, output_directory, &inputs),
-    );
-    record(
-        &mut observations,
-        &[("pm-concatenation", ConversionTarget::Pm)],
-        parametric_map::run_concatenation(fixtures, reference, probe, output_directory, &inputs),
-    );
+    observations.extend(geojson::run_direct(
+        fixtures,
+        reference,
+        probe,
+        output_directory,
+        &inputs,
+    ));
+    observations.extend(geojson::run_seg_reference(
+        fixtures,
+        reference,
+        probe,
+        output_directory,
+        &inputs,
+    ));
+    observations.extend(parametric_map::run_single(
+        fixtures,
+        reference,
+        probe,
+        output_directory,
+        &inputs,
+    ));
+    observations.extend(parametric_map::run_concatenation(
+        fixtures,
+        reference,
+        probe,
+        output_directory,
+        &inputs,
+    ));
     Ok(ConversionMatrixResult { observations })
-}
-
-fn record(
-    observations: &mut Vec<ConversionObservation>,
-    expected: &[(&str, ConversionTarget)],
-    result: Result<Vec<ConversionObservation>, String>,
-) {
-    match result {
-        Ok(items) => observations.extend(items),
-        Err(error) => {
-            observations.extend(
-                expected
-                    .iter()
-                    .map(|(case_id, target)| ConversionObservation {
-                        matrix: target.matrix(),
-                        case_id: (*case_id).to_owned(),
-                        target: *target,
-                        status: ConversionStatus::Failed,
-                        highdicom_readable: false,
-                        output_paths: Vec::new(),
-                        report: json!({}),
-                        normalized: Value::Null,
-                        command: Vec::new(),
-                        runtime_ms: 0.0,
-                        peak_rss_bytes: 0,
-                        peak_tracked_heap_bytes: 0,
-                        message: error.clone(),
-                    }),
-            );
-        }
-    }
-}
-
-pub(super) fn passed(
-    case_id: &str,
-    target: ConversionTarget,
-    observation: &ProbeObservation,
-    output_paths: Vec<PathBuf>,
-    normalized: Value,
-) -> ConversionObservation {
-    ConversionObservation {
-        matrix: target.matrix(),
-        case_id: case_id.to_owned(),
-        target,
-        status: ConversionStatus::Passed,
-        highdicom_readable: true,
-        output_paths,
-        report: observation.report.clone(),
-        normalized,
-        command: observation.command.clone(),
-        runtime_ms: observation.elapsed_ms,
-        peak_rss_bytes: observation.peak_rss_bytes,
-        peak_tracked_heap_bytes: observation.report["peak_tracked_heap_bytes"]
-            .as_u64()
-            .unwrap_or(0),
-        message: String::new(),
-    }
 }
 
 pub(super) fn verify_report_outputs(

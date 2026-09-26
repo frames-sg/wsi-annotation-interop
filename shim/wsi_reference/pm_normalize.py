@@ -14,12 +14,12 @@ from .highdicom_adapter import read_dataset
 from .normalize import _code, _content, _integers, _optional_string
 
 
-def normalize_pm(path: str | Path) -> dict[str, Any]:
+def normalize_pm(path: str | Path, *, include_samples: bool = False) -> dict[str, Any]:
     """Normalize Parametric Map identity, mapping, frames, and pixel values."""
-    return normalize_pm_dataset(pydicom.dcmread(path))
+    return normalize_pm_dataset(pydicom.dcmread(path), include_samples=include_samples)
 
 
-def normalize_pm_dataset(dataset: Dataset) -> dict[str, Any]:
+def normalize_pm_dataset(dataset: Dataset, *, include_samples: bool = False) -> dict[str, Any]:
     """Normalize an in-memory Parametric Map retrieved through DICOMweb."""
     parametric_map = read_dataset(dataset)
     values = np.asarray(parametric_map.pixel_array)
@@ -32,7 +32,7 @@ def normalize_pm_dataset(dataset: Dataset) -> dict[str, Any]:
     digest.update(b"wsi-annotation-interop-pm-pixels-v1\0")
     digest.update(precision.encode("ascii"))
     digest.update(canonical.tobytes(order="C"))
-    return {
+    normalized = {
         "sop_instance_uid": str(parametric_map.SOPInstanceUID),
         "series_instance_uid": str(parametric_map.SeriesInstanceUID),
         "study_instance_uid": str(parametric_map.StudyInstanceUID),
@@ -70,6 +70,11 @@ def normalize_pm_dataset(dataset: Dataset) -> dict[str, Any]:
         "frames": _frames(parametric_map),
         "source_sop_instance_uids": _source_sop_instance_uids(parametric_map),
     }
+    if include_samples:
+        normalized["pixel"]["samples"] = [
+            None if np.isnan(value) else float(value) for value in canonical.reshape(-1)
+        ]
+    return normalized
 
 
 def _pixel_precision(dataset: Dataset) -> str:

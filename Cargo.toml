@@ -20,6 +20,9 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system"] 
 tempfile = "3"
 ureq = { version = "3.4.0", default-features = false }
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 

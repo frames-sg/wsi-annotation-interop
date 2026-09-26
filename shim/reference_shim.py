@@ -51,7 +51,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, Any]:
     if arguments.command == "normalize-seg":
         return normalize_seg(arguments.annotation, arguments.source)
     if arguments.command == "normalize-pm":
-        return normalize_pm(arguments.dicom)
+        return normalize_pm(arguments.dicom, include_samples=arguments.include_samples)
     if arguments.command == "normalize-sr":
         return normalize_sr(arguments.dicom)
     if arguments.command == "normalize-wsi":
@@ -126,6 +126,8 @@ def _parser() -> argparse.ArgumentParser:
     for command in ("normalize-pm", "normalize-sr"):
         normalize_derived = subparsers.add_parser(command)
         normalize_derived.add_argument("--dicom", required=True, type=Path)
+        if command == "normalize-pm":
+            normalize_derived.add_argument("--include-samples", action="store_true")
 
     normalize_wsi_parser = subparsers.add_parser("normalize-wsi")
     normalize_wsi_parser.add_argument("--source", required=True, type=Path)

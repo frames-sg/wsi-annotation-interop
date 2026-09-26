@@ -161,12 +161,17 @@ impl std::error::Error for ProcessError {}
 
 pub(crate) fn run(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
     validate_spec(spec)?;
-    let mut child = Command::new(&spec.program)
+    let mut command = Command::new(&spec.program);
+    command
         .args(&spec.args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(ProcessError::Start)?;
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command.spawn().map_err(ProcessError::Start)?;
     let root = Pid::from_u32(child.id());
     let stdout = child
         .stdout
@@ -190,17 +195,25 @@ pub(crate) fn run(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
     let started = Instant::now();
     let mut sampler = Sampler::new(root, spec.sample_interval);
 
+    let mut child_status = None;
     let status = loop {
         sampler.sample();
-        if let Some(status) = child.try_wait().map_err(ProcessError::Wait)? {
+        if child_status.is_none() {
+            child_status = child.try_wait().map_err(ProcessError::Wait)?;
+        }
+        if let Some(status) = child_status
+            && stdout.is_finished()
+            && stderr.is_finished()
+        {
             break status;
         }
         if started.elapsed() >= spec.timeout {
-            terminate_process_tree(sampler.system_mut(), root);
+            terminate_process_tree(sampler.system_mut(), &child);
             let _ = child.kill();
             let _ = child.wait();
-            let stdout = join_reader(stdout, "stdout")?;
-            let stderr = join_reader(stderr, "stderr")?;
+            let cleanup_deadline = Instant::now() + Duration::from_secs(2);
+            let stdout = join_reader_until(stdout, "stdout", cleanup_deadline)?;
+            let stderr = join_reader_until(stderr, "stderr", cleanup_deadline)?;
             return Err(ProcessError::TimedOut {
                 timeout: spec.timeout,
                 output: Box::new(PartialProcessOutput {
@@ -284,6 +297,26 @@ pub(crate) fn join_reader(
         .join()
         .map_err(|_| ProcessError::ReaderPanicked(stream))?
         .map_err(|source| ProcessError::Read { stream, source })
+}
+
+fn join_reader_until(
+    reader: JoinHandle<io::Result<CapturedStream>>,
+    stream: &'static str,
+    deadline: Instant,
+) -> Result<CapturedStream, ProcessError> {
+    while !reader.is_finished() {
+        if Instant::now() >= deadline {
+            return Err(ProcessError::Read {
+                stream,
+                source: io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "process output pipe did not close after termination",
+                ),
+            });
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    join_reader(reader, stream)
 }
 
 struct Sampler {
@@ -379,7 +412,8 @@ fn is_descendant(system: &System, mut candidate: Pid, root: Pid) -> bool {
     false
 }
 
-fn terminate_process_tree(system: &mut System, root: Pid) {
+fn terminate_process_tree(system: &mut System, child: &std::process::Child) {
+    let root = Pid::from_u32(child.id());
     system.refresh_processes(ProcessesToUpdate::All, true);
     let descendants: Vec<_> = system
         .processes()
@@ -392,6 +426,12 @@ fn terminate_process_tree(system: &mut System, root: Pid) {
             let _ = process.kill_with(Signal::Kill);
         }
     }
+    // The group outlives its leader when descendants retain the output pipes.
+    #[cfg(unix)]
+    let _ = rustix::process::kill_process_group(
+        rustix::process::Pid::from_child(child),
+        rustix::process::Signal::KILL,
+    );
     if let Some(process) = system.process(root) {
         let _ = process.kill_with(Signal::Kill);
     }
@@ -503,21 +543,29 @@ mod tests {
 
     #[test]
     fn timeout_terminates_a_spawned_descendant() {
-        let mut spec = shell("sleep 60 & child=$!; printf '%s' \"$child\"; wait");
-        spec.timeout = Duration::from_millis(100);
-        let ProcessError::TimedOut { output, .. } = run(&spec).expect_err("must time out") else {
-            panic!("expected timeout");
-        };
-        let child_pid = String::from_utf8(output.stdout.bytes)
-            .expect("PID is UTF-8")
-            .parse::<u32>()
-            .expect("PID is numeric");
-        let status = std::process::Command::new("/bin/kill")
-            .args(["-0", &child_pid.to_string()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .expect("kill probe starts");
-        assert!(!status.success(), "descendant {child_pid} survived timeout");
+        for parent_exits in [false, true] {
+            let mut script = "sleep 2 & child=$!; printf '%s' \"$child\"".to_owned();
+            if !parent_exits {
+                script.push_str("; wait");
+            }
+            let mut spec = shell(&script);
+            spec.timeout = Duration::from_millis(100);
+            let ProcessError::TimedOut { output, .. } = run(&spec).expect_err("must time out")
+            else {
+                panic!("expected timeout");
+            };
+            assert!(output.elapsed < Duration::from_secs(1));
+            let child_pid = String::from_utf8(output.stdout.bytes)
+                .expect("PID is UTF-8")
+                .parse::<u32>()
+                .expect("PID is numeric");
+            let status = std::process::Command::new("/bin/kill")
+                .args(["-0", &child_pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("kill probe starts");
+            assert!(!status.success(), "descendant {child_pid} survived timeout");
+        }
     }
 
     struct FailingReader;

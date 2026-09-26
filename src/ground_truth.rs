@@ -285,7 +285,7 @@ fn background_segment_truth() -> Value {
     })
 }
 
-fn source_truth(level: u8) -> Value {
+pub(crate) fn source_truth(level: u8) -> Value {
     let canonical = level == 0;
     json!({
         "sop_class_uid": WSI_SOP_CLASS_UID,
@@ -304,7 +304,7 @@ fn source_truth(level: u8) -> Value {
     })
 }
 
-fn code(
+pub(crate) fn code(
     value: &str,
     scheme: &str,
     meaning: &str,

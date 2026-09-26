@@ -212,6 +212,16 @@ impl ReferenceShim {
         ])
     }
 
+    /// Read the bounded conversion fixtures with their actual samples for value/layout comparison.
+    pub(crate) fn normalize_pm_samples(&self, dicom: &Path) -> Result<Value, ShimError> {
+        self.execute(vec![
+            OsString::from("normalize-pm"),
+            OsString::from("--include-samples"),
+            OsString::from("--dicom"),
+            dicom.as_os_str().to_owned(),
+        ])
+    }
+
     /// Normalize one Comprehensive 3D SR through the independent reference implementation.
     ///
     /// # Errors

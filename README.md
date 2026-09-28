@@ -1,7 +1,8 @@
 # DICOM WSI Annotation Interoperability Harness
 
-This README describes the 0.1.1 CLI and study-profile commands. The source
-checkout includes the Python reference shim and study configuration files.
+This README describes the published [0.1.2 CLI](https://crates.io/crates/wsi-annotation-interop/0.1.2)
+and study-profile commands. The source checkout includes the Python reference
+shim and study configuration files.
 
 This repository is the neutral Rust study harness for comparing DICOM Whole
 Slide Microscopy ANN, SEG, Comprehensive 3D SR, and Parametric Map
